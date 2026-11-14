@@ -20,7 +20,7 @@ python3 tools/make_corpus_eval.py --text sentences.txt --out cases.tsv --count 2
 cargo run --bin wowtype-eval -- --lexicon lexicon.tsv --eval /tmp/test.tsv \
     --lm words.lm --k 1
 
-# 再加上字级神经语言模型（从本机微信输入法里取，见 tools/install_wetype_nnlm.py）
+# 再加上字级神经语言模型（从本机微信输入法里取；提取脚本在上游 tools/install_wetype_nnlm.py）
 cargo run --bin wowtype-eval -- --lexicon lexicon.tsv --eval /tmp/test.tsv \
     --lm words.lm --nnlm nlrgpt2_nnlm.bin --k 1
 ```
@@ -198,4 +198,4 @@ kyi、yongzwen、kaixin、jixu、fagei 的首选在 0.7 和 1.0 下也一样。
 ## 注意
 
 - Tatoeba 句子只用于本地评测，不提交
-- NNLM 是腾讯的模型，仓库不分发；`tools/install_wetype_nnlm.py` 从本机安装里取
+- NNLM 是腾讯的模型，仓库不分发；上游的 `tools/install_wetype_nnlm.py` 从本机安装里取

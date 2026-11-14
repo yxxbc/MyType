@@ -20,7 +20,7 @@ macOS 上的拼音输入法，自己维护的一支。本地运行、打字不�
 
 词库内存的改法：`LexEntry` 那种「一条词几个堆对象」的结构换成扁平表（词正文一个 `String`、音节键一个 `Vec<u16>`、频次一个 `Vec<f64>`，每条两个 `Span`），索引从 `HashMap<Vec<_>, Vec<_>>` 换成按哈希排好的 `(u64, u32)` 数组 + 二分。只在 `core/src/lexicon.rs`，`Lexicon` trait 没动。
 
-Linux 那半（fcitx5 插件、`settings/wowtype-config`、nix/deb/rpm 打包）跟着仓库在，但这里**不维护**，文件里的仓库地址指向本仓库，发布包得自己传。
+仓库里只剩 macOS 要用的东西：`core/`（Rust 引擎）、`voice/`（离线语音识别）、`macos/`（Swift 外壳）、`icons/`、`spec/`（设置契约）、`scripts/` 和 `tools/`（词库/码表的构建管线）。fcitx5 插件、Linux 的 `wowtype-config`、Nix/deb/rpm 打包、主题都已经删掉，需要 Linux 版请用上游。
 
 ## 构建（macOS）
 

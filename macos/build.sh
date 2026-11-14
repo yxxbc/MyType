@@ -56,13 +56,9 @@ res="$app/Contents/Resources"
 # 图标是单色模板图（黑色 + 透明的矢量 PDF，icons/mytype/make-icons.swift 生成）：系统按菜单栏深浅色上色。
 # menu.pdf 16pt，菜单栏和输入法菜单用；caret@2x.pdf 是切换输入法时光标旁提示气泡里的字形。
 cp icons/mytype/menu.pdf icons/mytype/caret@2x.pdf "$res/"
-# 应用图标：设置窗口（MyType --settings）在程序坞、关于窗口里用。源图 1024×1024，缩成 iconset 再打 icns
-iconset="$work/AppIcon.iconset"
-mkdir -p "$iconset"
-for spec in 16:16x16 32:16x16@2x 32:32x32 64:32x32@2x 128:128x128 256:128x128@2x 256:256x256 512:256x256@2x 512:512x512 1024:512x512@2x; do
-  sips -z "${spec%%:*}" "${spec%%:*}" icons/mytype/app-1024.png --out "$iconset/icon_${spec#*:}.png" >/dev/null
-done
-iconutil -c icns "$iconset" -o "$res/AppIcon.icns"
+# 应用图标：设置窗口（MyType --settings）在程序坞、关于窗口里用。源图 1024×1024，
+# 自己拼 .icns（scripts/make-icns.py），不依赖 iconutil——它偶尔会在整机层面失灵
+python3 scripts/make-icns.py icons/mytype/app-1024.png "$res/AppIcon.icns"
 for lproj in macos/Resources/*.lproj; do
   cp -R "$lproj" "$res/"
   plutil -lint "$res/$(basename "$lproj")/InfoPlist.strings"

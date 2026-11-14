@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
-members = ["core", "voice", "voice-daemon"]
-# 桌面端默认只构建与平台无关的部分；Linux 上再显式构建守护进程
+# 这个仓库只维护 macOS 版：核心引擎 + 语音识别
+members = ["core", "voice"]
 default-members = ["core", "voice"]
 
 [profile.release]

@@ -417,5 +417,4 @@ cargo run --release -p wowtype-core --bin wowtype-train -- \
 | `hpmac_base.bin` 超参数 | 已读出浮点值 |
 | 候选排序对照（官方引擎直接给出分数） | 卡在 create_session 的一个空指针 |
 
-详见 [analysis/REPORT.md](../analysis/REPORT.md)、[docs/DATA.md](DATA.md)、
-[tools/ref-engine/README.md](../tools/ref-engine/README.md)、[docs/VOICE.md](VOICE.md)。
+详见 [docs/DATA.md](DATA.md)、[docs/VOICE.md](VOICE.md)。
