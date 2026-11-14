@@ -37,18 +37,46 @@ enum Installer {
         sources().first { string($0, kTISPropertyInputSourceID) == modeID }
     }
 
+    /// 打开这个安装包登记的**所有**输入源：组件本身和各个输入模式。
+    ///
+    /// 只打开 `.Hans` 的话菜单栏的输入法菜单里不出现；组件那一条系统有时不认
+    /// `TISEnableInputSource`（返回 noErr 但状态还是关着），这时只能到
+    /// 「系统设置 → 键盘 → 文字输入」里加一次，或者注销重新登录。
     static func enable() -> Bool {
-        guard let source = mode() else {
-            print("没找到输入源 \(modeID)：先 --register，可能要等几秒或重新登录")
+        // 按 bundle ID 过滤的列表只有输入模式，没有「组件本身」，所以自己从全量列表里挑
+        let all = TISCreateInputSourceList(nil, true)?.takeRetainedValue() as? [TISInputSource] ?? []
+        let list = all.filter { source in
+            guard let id = string(source, kTISPropertyInputSourceID) else { return false }
+            return id == bundleID || id.hasPrefix(bundleID + ".")
+        }
+        guard !list.isEmpty else {
+            print("没找到输入源 \(bundleID)：先 --register，可能要等几秒或重新登录")
             return false
         }
-        if bool(source, kTISPropertyInputSourceIsEnabled) {
-            print("已经打开了")
-            return true
+        var ok = true
+        var changed = 0
+        for source in list {
+            let name = string(source, kTISPropertyInputSourceID) ?? "?"
+            if bool(source, kTISPropertyInputSourceIsEnabled) {
+                continue
+            }
+            let status = TISEnableInputSource(source)
+            if status != noErr {
+                ok = false
+                print("打开失败（\(status)）：\(name)")
+            } else if bool(source, kTISPropertyInputSourceIsEnabled) {
+                changed += 1
+            } else {
+                // 系统不认：组件那一条常见，到系统设置里加一次就好
+                print("系统没让打开 \(name)：到「系统设置 → 键盘 → 文字输入」里加一次")
+            }
         }
-        let status = TISEnableInputSource(source)
-        print(status == noErr ? "已打开 \(modeID)" : "打开失败（\(status)）")
-        return status == noErr
+        if changed == 0 {
+            print("已经打开了")
+        } else {
+            print("已打开 \(changed) 个输入源（\(modeID)）")
+        }
+        return ok
     }
 
     static func select() -> Bool {

@@ -37,6 +37,10 @@ macos/install.sh dist/macos/MyType-0.5.0-macos.zip
 
 产物在 `dist/macos/`：`MyType.app`、`MyType-0.5.0-macos.zip`（给 `install.sh`）、`MyType-0.5.0-macos.pkg`（双击装，装到 `~/Library/Input Methods`，不用管理员密码）。
 
+装完 `install.sh` 会登记、打开并试着切过去。如果菜单栏的输入法菜单里没有它，
+到「系统设置 → 键盘 → 文字输入 → 输入法 → 编辑 → ＋ → 简体中文 → MyType」加一次，
+或者注销重新登录（组件那一条系统有时不认 `TISEnableInputSource`，只打开了 `.Hans` 模式时不显示）。
+
 已经装过上游版本的话，把 `~/Library/Application Support/WowType` 复制成 `~/Library/Application Support/MyType`，配置、用户词、语音模型、万象词库都在里面，不用重新下载；`wowtype.conf` 里的 `Lexicon=` 记的绝对路径要跟着改。
 
 - 数据目录：`~/Library/Application Support/MyType`（设置文件 `wowtype.conf` 沿用这个名字，键名和 Linux 那份一样）
