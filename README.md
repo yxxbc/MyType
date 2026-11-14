@@ -10,15 +10,22 @@ macOS 上的拼音输入法，自己维护的一支。本地运行、打字不�
 
 相对上游的改动：
 
-| | 上游 0.4.0 | 这里 |
+| | 上游 0.4.0 | 这里 0.5.1 |
 |---|---|---|
-| 词库常驻内存（万象 174 万条） | 590 MB | **247 MB** |
-| 词库载入 | 907 ms | **321 ms** |
-| 最慢一次按键 | 2.64 ms | 2.66 ms |
+| `--selftest` 峰值内存（万象 174 万条 + 语言模型） | 880 MB | **188 MB**（脏页 89 MB） |
+| 词库常驻（单独测） | 590 MB | **39 MB**（脏页 3.4 MB） |
+| 语言模型 `words.lm` | 105 MB | **9 MB** |
+| 词库载入 | 1.3 s | **0.2 s** |
+| 最慢一次按键 | 2.64 ms | 2.9 ms |
 | 名字 / bundle id | WowType / io.github.gloridust… | **MyType / io.github.yxxbc.inputmethod.MyType** |
 | 版本 | 0.4.0 | 从 **0.5.0** 起自己编 |
 
-词库内存的改法：`LexEntry` 那种「一条词几个堆对象」的结构换成扁平表（词正文一个 `String`、音节键一个 `Vec<u16>`、频次一个 `Vec<f64>`，每条两个 `Span`），索引从 `HashMap<Vec<_>, Vec<_>>` 换成按哈希排好的 `(u64, u32)` 数组 + 二分。只在 `core/src/lexicon.rs`，`Lexicon` trait 没动。
+内存的改法是三层：
+1. 词条从「一条词一个 `LexEntry`（`String` + 两个 `Vec`）」换成扁平表，索引从 `HashMap<Vec<_>, Vec<_>>` 换成按哈希排好的 `(u64, u32)` 数组 + 二分；
+2. 词库快照升级成可随机访问的 v3（记录 + 偏移表 + 索引），打开时 `mmap` 只读——常驻的只是被查到的文件页，系统随时能回收；
+3. `words.lm` 同样 `mmap`，只留词表偏移和排好序的词号。
+
+都只在 `core/src/lexicon.rs`、`core/src/wordlm.rs`，`Lexicon` / `LanguageModel` 两个 trait 没动。
 
 仓库里只剩 macOS 要用的东西：`core/`（Rust 引擎）、`voice/`（离线语音识别）、`macos/`（Swift 外壳）、`icons/`、`spec/`（设置契约）、`scripts/` 和 `tools/`（词库/码表的构建管线）。fcitx5 插件、Linux 的 `wowtype-config`、Nix/deb/rpm 打包、主题都已经删掉，需要 Linux 版请用上游。
 
@@ -32,10 +39,10 @@ export PATH="$HOME/.cargo/bin:$PATH"
 scripts/make-data.sh     # 雾凇词库 + english.txt + words.lm（联网下载，约一分钟）
 scripts/make-wubi.sh     # 五笔 86 码表
 macos/build.sh dist/data dist/macos
-macos/install.sh dist/macos/MyType-0.5.0-macos.zip
+macos/install.sh dist/macos/MyType-0.5.1-macos.zip
 ```
 
-产物在 `dist/macos/`：`MyType.app`、`MyType-0.5.0-macos.zip`（给 `install.sh`）、`MyType-0.5.0-macos.pkg`（双击装，装到 `~/Library/Input Methods`，不用管理员密码）。
+产物在 `dist/macos/`：`MyType.app`、`MyType-0.5.1-macos.zip`（给 `install.sh`）、`MyType-0.5.1-macos.pkg`（双击装，装到 `~/Library/Input Methods`，不用管理员密码）。
 
 装完 `install.sh` 会登记、打开并试着切过去。如果菜单栏的输入法菜单里没有它，
 到「系统设置 → 键盘 → 文字输入 → 输入法 → 编辑 → ＋ → 简体中文 → MyType」加一次，
