@@ -9,7 +9,7 @@
 //! - 儿化用独立的 r 标记，例如：hua r
 //! - 以 # 开头的行和空行会被忽略。
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::sync::OnceLock;
@@ -201,22 +201,120 @@ pub trait Lexicon: Send + Sync {
     }
 }
 
+/// 词条在扁平表里的位置：`off` 是起点（`words` 的字节偏移、`keys` 的下标），
+/// `len` 是长度（词是字节数，键是音节数）。
+#[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
+struct Span {
+    off: u32,
+    len: u32,
+}
+
+/// 一个索引：按哈希排好序的「哈希 + 词条号」。
+///
+/// 拆成两个 Vec 而不是 `Vec<(u64, u32)>`：后者一行 16 字节（u64 对齐），拆开是 12 字节，
+/// 55 万词库差 2 MB。同一个哈希的词条连在一起，查的时候二分找到那一段。
+#[derive(Default)]
+struct HashIndex {
+    hashes: Vec<u64>,
+    entries: Vec<u32>,
+}
+
+impl HashIndex {
+    fn push(&mut self, hash: u64, entry: u32) {
+        self.hashes.push(hash);
+        self.entries.push(entry);
+    }
+
+    /// 哈希等于 hash 的那一段词条号（碰撞的会混进来，调用者还要核对读音）。
+    fn group(&self, hash: u64) -> &[u32] {
+        let start = self.hashes.partition_point(|&h| h < hash);
+        let len = self.hashes[start..].partition_point(|&h| h == hash);
+        &self.entries[start..start + len]
+    }
+
+    fn len(&self) -> usize {
+        self.entries.len()
+    }
+}
+
+/// 词条的读音键存成 u16：低 15 位是音节 ID，最高位是儿化。
+fn raw_key(key: SyllableKey) -> u16 {
+    (key.id & 0x7fff) | (u16::from(key.erhua) << 15)
+}
+
+/// 音节 ID 对应的拼音文本。热路径上别用 [`Syllable::from_id`]：它要把文本重新拆成
+/// 声母、韵母，一条几百纳秒，查一个上千条的简拼桶就是几百微秒。
+fn syllable_text(id: u16) -> Option<&'static str> {
+    crate::syllable::SYLLABLES.get(id as usize).copied()
+}
+
+fn decode_key(raw: u16) -> SyllableKey {
+    SyllableKey::new(raw & 0x7fff, raw & 0x8000 != 0)
+}
+
+/// 模糊音索引的哈希一步：归并后的音节 ID（u32）。
+fn fuzzy_hash_step(hash: u64, id: u32) -> u64 {
+    let mut h = hash;
+    for byte in id.to_le_bytes() {
+        h = (h ^ u64::from(byte)).wrapping_mul(0x1000_0000_01b3);
+    }
+    h
+}
+
+fn sort_unique(values: &mut Vec<u64>) {
+    values.sort_unstable();
+    values.dedup();
+}
+
+/// 把索引排好。`rare_last` 时同一哈希里生僻字排在后面（`lookup_common` 读到就停），
+/// 和以前 `add_entry` 往桶里插时的顺序一致。
+fn sort_index(index: &mut HashIndex, rare: &[bool], rare_last: bool) {
+    let mut rows: Vec<(u64, u8, u32)> = (0..index.len())
+        .map(|n| {
+            let entry = index.entries[n];
+            let rare = if rare_last && rare[entry as usize] { 1 } else { 0 };
+            (index.hashes[n], rare, entry)
+        })
+        .collect();
+    // 按 (哈希, 生僻, 词条号) 排：词条号唯一，结果和「按 (哈希, 生僻) 稳定排序」一样，
+    // 也就是每个读音内部还是加入顺序、生僻字在后。
+    rows.sort_unstable_by_key(|&(hash, rare, entry)| (hash, rare, entry));
+    index.hashes.clear();
+    index.entries.clear();
+    index.hashes.extend(rows.iter().map(|row| row.0));
+    index.entries.extend(rows.iter().map(|row| row.2));
+}
+
 /// 内存词典。
+///
+/// 词条挤在几张扁平表里：词正文一个 `String`、音节键一个 `Vec<u16>`、频次一个 `Vec<f64>`，
+/// 每条词在 [Span] 里只记两个 u32；索引是按哈希排好的 u64/u32 数组。
+///
+/// 以前每条词是一个 [LexEntry]（一个 `String` + 两个 `Vec`，加上两个哈希表里各一份拷贝），
+/// 55 万条的词库要几百万次小分配、几百 MB 堆；同样的数据现在十几 MB 连续内存就放下，
+/// 查的时候二分找哈希、再核对读音（碰撞只会多查几条，不会查错）。
 #[derive(Default)]
 pub struct MemoryLexicon {
-    entries: Vec<LexEntry>,
-    full_index: HashMap<Vec<SyllableKey>, Vec<usize>>,
-    jianpin_index: HashMap<Vec<u8>, Vec<usize>>,
-    /// 模糊音索引：键是各音节在全部分组都打开时的归并键（`syllable::fuzzy_key`），
-    /// 查到以后再按实际打开的分组过滤。
+    /// 所有词的 UTF-8 正文连着放
+    words: String,
+    word_spans: Vec<Span>,
+    /// 音节键连着放，第 i 条词的键是 `keys[key_spans[i].off..][..key_spans[i].len]`
+    keys: Vec<u16>,
+    key_spans: Vec<Span>,
+    freqs: Vec<f64>,
+    /// 全拼索引：键是音节的滚动哈希
+    full: HashIndex,
+    /// 简拼索引：键是各音节首字母的滚动哈希
+    jianpin: HashIndex,
+    /// 模糊音索引：键是归并后音节 ID 的滚动哈希。
     ///
     /// 默认不构建——模糊音默认关闭，而 55 万词库下建这张表要占掉不少加载时间。
-    /// 第一次模糊查询时再建。
-    fuzzy_index: OnceLock<HashMap<Vec<u32>, Vec<usize>>>,
-    /// 全拼词条所有「真前缀」的哈希，供 has_longer 剪枝（哈希碰撞只会少剪，不会错剪）。
-    full_prefixes: HashSet<u64>,
+    /// 载入后 [`Lexicon::prepare_fuzzy`]、或者第一次模糊查询时再建。
+    fuzzy: OnceLock<HashIndex>,
+    /// 全拼词条所有「真前缀」的哈希（升序、去重），供 has_longer 剪枝
+    full_prefixes: Vec<u64>,
     /// 同上，按声母：简拼和「全拼混简拼」（kyi、yongzwen）的查询用它剪枝。
-    initial_prefixes: HashSet<u64>,
+    initial_prefixes: Vec<u64>,
     total_freq: f64,
     /// 加载时被跳过的行数（未知音节等）。
     skipped: usize,
@@ -236,54 +334,273 @@ impl MemoryLexicon {
             bail!("频次必须是非负有限数，收到 {freq}");
         }
         let keys = parse_pinyin_keys(pinyin)?;
-        let initials = keys
-            .iter()
-            .map(|k| {
-                Syllable::from_id(k.id)
-                    .map(|s| s.initial_letter())
-                    .ok_or_else(|| anyhow!("未知音节 ID: {}", k.id))
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-        self.add_entry(keys, initials, word.to_string(), freq);
+        self.push_entry(&keys, word, freq);
+        self.finish();
         Ok(())
     }
 
-    /// 已经解析好音节的词条入口（缓存加载用，跳过拼音解析）。
-    fn add_entry(&mut self, keys: Vec<SyllableKey>, initials: Vec<u8>, word: String, freq: f64) {
-        let idx = self.entries.len();
-        self.entries.push(LexEntry {
-            word,
-            freq,
-            keys: keys.clone(),
-            initials: initials.clone(),
+    /// 加一条词，不排索引（载入时一条条调，最后 [MemoryLexicon::finish] 一次）。
+    fn push_entry(&mut self, keys: &[SyllableKey], word: &str, freq: f64) {
+        let entry = self.word_spans.len() as u32;
+        self.word_spans.push(Span {
+            off: self.words.len() as u32,
+            len: word.len() as u32,
         });
-        let rare = self.entries[idx].is_rare();
-        let entries = &self.entries;
-        // 每组里生僻字（LexEntry::is_rare）排在最后，lookup_common 读到它们就停
-        let push = |list: &mut Vec<usize>| {
-            list.push(idx);
-            if !rare {
-                let mut at = list.len() - 1;
-                while at > 0 && entries[list[at - 1]].is_rare() {
-                    list.swap(at - 1, at);
-                    at -= 1;
-                }
-            }
-        };
-        push(self.full_index.entry(keys.clone()).or_default());
-        push(self.jianpin_index.entry(initials.clone()).or_default());
+        self.words.push_str(word);
+        self.key_spans.push(Span {
+            off: self.keys.len() as u32,
+            len: keys.len() as u32,
+        });
+        self.keys.extend(keys.iter().copied().map(raw_key));
+        self.freqs.push(freq);
+        self.total_freq += freq;
+
+        let mut hash = KEY_HASH_SEED;
+        for key in keys {
+            hash = key_hash_step(hash, *key);
+        }
+        self.full.push(hash, entry);
+
+        let initials: Vec<u8> = keys
+            .iter()
+            .map(|key| syllable_text(key.id).map_or(0, |text| text.as_bytes()[0]))
+            .collect();
+        let mut hash = KEY_HASH_SEED;
+        for &letter in &initials {
+            hash = initial_hash_step(hash, letter);
+        }
+        self.jianpin.push(hash, entry);
+
+        // 前缀：最后一个音节不剪（cut = 整词本身）
         let mut hash = KEY_HASH_SEED;
         for key in keys.iter().take(keys.len().saturating_sub(1)) {
             hash = key_hash_step(hash, *key);
-            self.full_prefixes.insert(hash);
+            self.full_prefixes.push(hash);
         }
         let mut hash = KEY_HASH_SEED;
         for &letter in initials.iter().take(initials.len().saturating_sub(1)) {
             hash = initial_hash_step(hash, letter);
-            self.initial_prefixes.insert(hash);
+            self.initial_prefixes.push(hash);
         }
-        self.total_freq += freq;
+    }
+
+    /// 排好索引，载入完、或者插过词以后调。
+    fn finish(&mut self) {
+        let rare: Vec<bool> = (0..self.len()).map(|entry| self.is_rare(entry)).collect();
+        let mut full = std::mem::take(&mut self.full);
+        sort_index(&mut full, &rare, true);
+        self.full = full;
+        let mut jianpin = std::mem::take(&mut self.jianpin);
+        sort_index(&mut jianpin, &rare, true);
+        self.jianpin = jianpin;
+        sort_unique(&mut self.full_prefixes);
+        sort_unique(&mut self.initial_prefixes);
+    }
+
+    /// 第 i 条词的正文。
+    fn word(&self, entry: usize) -> &str {
+        let span = self.word_spans[entry];
+        &self.words[span.off as usize..(span.off + span.len) as usize]
+    }
+
+    /// 第 i 条词读成哪几个音节。
+    fn keys_at(&self, entry: usize) -> impl Iterator<Item = SyllableKey> + '_ {
+        let span = self.key_spans[entry];
+        self.keys[span.off as usize..(span.off + span.len) as usize]
+            .iter()
+            .copied()
+            .map(decode_key)
+    }
+
+    fn key_count(&self, entry: usize) -> usize {
+        self.key_spans[entry].len as usize
+    }
+
+    /// 生僻字：频次不到 1 的单字（见 [`LexEntry::is_rare`]）。
+    fn is_rare(&self, entry: usize) -> bool {
+        self.freqs[entry] < 1.0 && self.word(entry).char_indices().nth(1).is_none()
+    }
+
+    /// 第 i 条词的第 n 个音节的声母。
+    fn initial_at(&self, entry: usize, at: usize) -> Option<u8> {
+        let span = self.key_spans[entry];
+        if at >= span.len as usize {
+            return None;
+        }
+        syllable_text(self.keys[span.off as usize + at] & 0x7fff)
+            .map(|text| text.as_bytes()[0])
+    }
+
+    /// 词条 i 拼成 [LexEntry]（只在返回候选时调，几条而已）。
+    fn entry(&self, entry: usize) -> LexEntry {
+        let keys: Vec<SyllableKey> = self.keys_at(entry).collect();
+        let initials = keys
+            .iter()
+            .map(|key| syllable_text(key.id).map_or(0, |text| text.as_bytes()[0]))
+            .collect();
+        LexEntry {
+            word: self.word(entry).to_string(),
+            freq: self.freqs[entry],
+            keys,
+            initials,
+        }
+    }
+
+    /// 词条 i 的读数和 query 逐音节对得上吗（全拼 + 简拼混查时用）。
+    fn matches(&self, entry: usize, query: &[SyllableQuery]) -> bool {
+        if self.key_count(entry) != query.len() {
+            return false;
+        }
+        for (at, q) in query.iter().enumerate() {
+            let key = self.keys_at(entry).nth(at).unwrap_or(SyllableKey::new(0, false));
+            match q {
+                SyllableQuery::Full { id, erhua } => {
+                    if key.id != *id || key.erhua != *erhua {
+                        return false;
+                    }
+                }
+                SyllableQuery::Jianpin { letter } => {
+                    match crate::syllable::jianpin_required_initial(*letter) {
+                        Some(initial) => {
+                            if !syllable_text(key.id).is_some_and(|text| text.starts_with(initial)) {
+                                return false;
+                            }
+                        }
+                        None => {
+                            if self.initial_at(entry, at) != Some(*letter) {
+                                return false;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        true
+    }
+
+    /// 词条 i 的读数正好是 keys 吗。
+    fn keys_equal(&self, entry: usize, keys: &[SyllableKey]) -> bool {
+        self.key_count(entry) == keys.len() && self.keys_at(entry).eq(keys.iter().copied())
+    }
+
+    /// 词条 i 的声母正好是 letters 吗。
+    fn initials_equal(&self, entry: usize, letters: &[u8]) -> bool {
+        self.key_count(entry) == letters.len()
+            && (0..letters.len()).all(|at| self.initial_at(entry, at) == Some(letters[at]))
+    }
+
+    /// 索引里哈希为 hash 的词条里挑出 keep 认的，按索引里的顺序（生僻字在后）。
+    fn collect(
+        &self,
+        index: &HashIndex,
+        hash: u64,
+        skip_rare: bool,
+        keep: impl Fn(usize) -> bool,
+    ) -> Vec<LexEntry> {
+        index
+            .group(hash)
+            .iter()
+            .map(|&entry| entry as usize)
+            .filter(|&entry| !(skip_rare && self.is_rare(entry)) && keep(entry))
+            .map(|entry| self.entry(entry))
+            .collect()
+    }
+
+    fn lookup_impl(&self, query: &[SyllableQuery], skip_rare: bool) -> Vec<LexEntry> {
+        if query.is_empty() {
+            return Vec::new();
+        }
+
+        let all_full = query
+            .iter()
+            .all(|q| matches!(q, SyllableQuery::Full { .. }));
+        let all_jianpin = query
+            .iter()
+            .all(|q| matches!(q, SyllableQuery::Jianpin { .. }));
+
+        if all_full {
+            let keys: Vec<SyllableKey> = query
+                .iter()
+                .map(|q| match q {
+                    SyllableQuery::Full { id, erhua } => SyllableKey::new(*id, *erhua),
+                    _ => unreachable!(),
+                })
+                .collect();
+            let mut hash = KEY_HASH_SEED;
+            for key in &keys {
+                hash = key_hash_step(hash, *key);
+            }
+            return self.collect(&self.full, hash, skip_rare, |entry| {
+                self.keys_equal(entry, &keys)
+            });
+        }
+
+        if all_jianpin && !query.iter().any(needs_initial_check) {
+            let letters: Vec<u8> = query
+                .iter()
+                .map(|q| match q {
+                    SyllableQuery::Jianpin { letter } => *letter,
+                    _ => unreachable!(),
+                })
+                .collect();
+            let mut hash = KEY_HASH_SEED;
+            for &letter in &letters {
+                hash = initial_hash_step(hash, letter);
+            }
+            return self.collect(&self.jianpin, hash, skip_rare, |entry| {
+                self.initials_equal(entry, &letters)
+            });
+        }
+
+        // 全拼混简拼（k yi -> 可以）、zh/ch/sh 简拼：先按首字母查，再逐个比对
+        let Some(initials) = query_initials(query) else {
+            return Vec::new();
+        };
+        let mut hash = KEY_HASH_SEED;
+        for &letter in &initials {
+            hash = initial_hash_step(hash, letter);
+        }
+        self.collect(&self.jianpin, hash, skip_rare, |entry| {
+            self.matches(entry, query)
+        })
+    }
+
+    fn build_fuzzy_index(&self) -> HashIndex {
+        let mut index = HashIndex::default();
+        for entry in 0..self.len() {
+            let mut hash = KEY_HASH_SEED;
+            let mut ok = true;
+            for key in self.keys_at(entry) {
+                match crate::syllable::fuzzy_key(key.id) {
+                    Some(canon) => hash = fuzzy_hash_step(hash, canon),
+                    None => {
+                        ok = false;
+                        break;
+                    }
+                }
+            }
+            if ok {
+                index.push(hash, entry as u32);
+            }
+        }
+        let rare: Vec<bool> = Vec::new();
+        sort_index(&mut index, &rare, false);
+        index
+    }
+
+    /// 加载时被跳过的行数。
+    pub fn skipped(&self) -> usize {
+        self.skipped
+    }
+
+    /// 从 TSV 文件加载。
+    pub fn from_tsv_path<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let path = path.as_ref();
+        let data = fs::read_to_string(path)
+            .with_context(|| format!("读取词典失败: {}", path.display()))?;
+        let mut lex = Self::from_tsv_str(&data)?;
+        lex.estimate_placeholder_freqs(PLACEHOLDER_MIN_WORDS);
+        Ok(lex)
     }
 
     /// 从 TSV 加载，并在旁边维护一份二进制快照。
@@ -314,26 +631,30 @@ impl MemoryLexicon {
     }
 
     fn write_cache(&self, cache: &Path, src_len: u64, src_mtime: u64) -> Result<()> {
-        let mut buf: Vec<u8> = Vec::with_capacity(self.entries.len() * 24);
+        let mut buf: Vec<u8> = Vec::with_capacity(self.len() * 24);
         buf.extend_from_slice(CACHE_MAGIC);
         buf.extend_from_slice(&cache_version().to_le_bytes());
         buf.extend_from_slice(&src_len.to_le_bytes());
         buf.extend_from_slice(&src_mtime.to_le_bytes());
-        buf.extend_from_slice(&(self.entries.len() as u32).to_le_bytes());
-        // 词频是估过的（见 estimate_placeholder_freqs），总频次单独存，别从估值里加
+        buf.extend_from_slice(&(self.len() as u32).to_le_bytes());
+        // 词频是估过的（见 `estimate_placeholder_freqs`），总频次单独存，别从估值里加
         buf.extend_from_slice(&self.total_freq.to_le_bytes());
-        for entry in &self.entries {
-            let word = entry.word.as_bytes();
+        for entry in 0..self.len() {
+            let word = self.word(entry).as_bytes();
             buf.extend_from_slice(&(word.len() as u16).to_le_bytes());
             buf.extend_from_slice(word);
-            buf.extend_from_slice(&entry.freq.to_le_bytes());
-            buf.push(entry.keys.len() as u8);
-            for key in &entry.keys {
-                let raw = (key.id & 0x7fff) | (u16::from(key.erhua) << 15);
-                buf.extend_from_slice(&raw.to_le_bytes());
+            buf.extend_from_slice(&self.freqs[entry].to_le_bytes());
+            let keys: Vec<SyllableKey> = self.keys_at(entry).collect();
+            buf.push(keys.len() as u8);
+            for key in &keys {
+                buf.extend_from_slice(&raw_key(*key).to_le_bytes());
             }
-            buf.push(entry.initials.len() as u8);
-            buf.extend_from_slice(&entry.initials);
+            buf.push(keys.len() as u8);
+            for key in &keys {
+                let letter = Syllable::from_id(key.id)
+                    .map_or(0, |syllable| syllable.initial_letter());
+                buf.push(letter);
+            }
         }
         if let Some(parent) = cache.parent() {
             fs::create_dir_all(parent).ok();
@@ -357,15 +678,13 @@ impl MemoryLexicon {
         }
         let count = u32::from_le_bytes(data.get(24..28)?.try_into().ok()?) as usize;
         let total = f64::from_le_bytes(data.get(28..36)?.try_into().ok()?);
-        let mut cursor = 36usize;
         let mut lex = MemoryLexicon::new();
+        let mut cursor = 36usize;
         for _ in 0..count {
             let word_len =
                 u16::from_le_bytes(data.get(cursor..cursor + 2)?.try_into().ok()?) as usize;
             cursor += 2;
-            let word = std::str::from_utf8(data.get(cursor..cursor + word_len)?)
-                .ok()?
-                .to_string();
+            let word = std::str::from_utf8(data.get(cursor..cursor + word_len)?).ok()?;
             cursor += word_len;
             let freq = f64::from_le_bytes(data.get(cursor..cursor + 8)?.try_into().ok()?);
             cursor += 8;
@@ -375,14 +694,14 @@ impl MemoryLexicon {
             for _ in 0..n_keys {
                 let raw = u16::from_le_bytes(data.get(cursor..cursor + 2)?.try_into().ok()?);
                 cursor += 2;
-                keys.push(SyllableKey::new(raw & 0x7fff, raw & 0x8000 != 0));
+                keys.push(decode_key(raw));
             }
+            // 声母是键推出来的，快照里的那一份跳过去
             let n_initials = *data.get(cursor)? as usize;
-            cursor += 1;
-            let initials = data.get(cursor..cursor + n_initials)?.to_vec();
-            cursor += n_initials;
-            lex.add_entry(keys, initials, word, freq);
+            cursor += 1 + n_initials;
+            lex.push_entry(&keys, word, freq);
         }
+        lex.finish();
         lex.total_freq = total;
         Some(lex)
     }
@@ -407,11 +726,12 @@ impl MemoryLexicon {
                 .with_context(|| format!("第 {} 行频次不是数字: {freq}", line_no + 1))?;
             // 音节不认识（各地方言音、冷僻拼音）时跳过这一行，
             // 不要让一条脏数据毁掉整个词库。
-            match lex.insert(pinyin, word, freq) {
-                Ok(()) => {}
+            match parse_pinyin_keys(pinyin) {
+                Ok(keys) => lex.push_entry(&keys, word, freq),
                 Err(_) => lex.skipped += 1,
             }
         }
+        lex.finish();
         Ok(lex)
     }
 
@@ -429,10 +749,10 @@ impl MemoryLexicon {
     fn estimate_placeholder_freqs(&mut self, min_words: usize) {
         let mut hist: HashMap<u64, usize> = HashMap::new();
         let mut multi = 0usize;
-        for entry in &self.entries {
-            if entry.keys.len() >= 2 {
+        for entry in 0..self.len() {
+            if self.key_count(entry) >= 2 {
                 multi += 1;
-                *hist.entry(entry.freq.to_bits()).or_default() += 1;
+                *hist.entry(self.freqs[entry].to_bits()).or_default() += 1;
             }
         }
         let Some((&bits, &count)) = hist.iter().max_by_key(|(_, &c)| c) else {
@@ -448,15 +768,16 @@ impl MemoryLexicon {
             .unwrap_or(PLACEHOLDER_BONUS);
         let total = self.total_freq.max(1.0);
         let mut updates = Vec::new();
-        for (idx, entry) in self.entries.iter().enumerate() {
-            if entry.freq != placeholder || entry.keys.len() < 2 {
+        for entry in 0..self.len() {
+            if self.freqs[entry] != placeholder || self.key_count(entry) < 2 {
                 continue;
             }
-            let chars: Vec<char> = entry.word.chars().collect();
+            let chars: Vec<char> = self.word(entry).chars().collect();
             let n = chars.len();
-            if n != entry.keys.len() {
+            if n != self.key_count(entry) {
                 continue; // 儿化、混了字母数字的词，字和音节对不齐
             }
+            let keys: Vec<SyllableKey> = self.keys_at(entry).collect();
             // best[j]：前 j 个字切成已有词的最小代价；rarest[j]：这种切法里最冷门部分的频次
             let mut best = vec![f64::INFINITY; n + 1];
             let mut rarest = vec![f64::INFINITY; n + 1];
@@ -469,19 +790,9 @@ impl MemoryLexicon {
                     if j - i == n {
                         continue; // 不能用自己
                     }
-                    let Some(ids) = self.full_index.get(&entry.keys[i..j]) else {
+                    let Some(freq) = self.part_freq(&keys[i..j], &chars[i..j]) else {
                         continue;
                     };
-                    let part: String = chars[i..j].iter().collect();
-                    let freq = ids
-                        .iter()
-                        .map(|&k| &self.entries[k])
-                        .filter(|e| e.word == part)
-                        .map(|e| e.freq)
-                        .fold(0.0f64, f64::max);
-                    if freq <= 0.0 {
-                        continue;
-                    }
                     let cost = best[i] - (freq / total).ln();
                     if cost < best[j] {
                         best[j] = cost;
@@ -493,123 +804,34 @@ impl MemoryLexicon {
                 continue;
             }
             let estimate = (total * (bonus - best[n]).exp()).min(rarest[n]);
-            if estimate > entry.freq {
-                updates.push((idx, estimate));
+            if estimate > self.freqs[entry] {
+                updates.push((entry, estimate));
             }
         }
-        for (idx, freq) in updates {
-            self.entries[idx].freq = freq;
+        for (entry, freq) in updates {
+            self.freqs[entry] = freq;
         }
     }
 
-    fn build_fuzzy_index(&self) -> HashMap<Vec<u32>, Vec<usize>> {
-        let mut map: HashMap<Vec<u32>, Vec<usize>> = HashMap::new();
-        for (idx, entry) in self.entries.iter().enumerate() {
-            if let Some(fuzzy) = entry
-                .keys
-                .iter()
-                .map(|k| crate::syllable::fuzzy_key(k.id))
-                .collect::<Option<Vec<_>>>()
-            {
-                map.entry(fuzzy).or_default().push(idx);
+    /// 读音正好是 keys、词正好是 chars 的那条词的频次（取最高的），没有返回 None。
+    fn part_freq(&self, keys: &[SyllableKey], chars: &[char]) -> Option<f64> {
+        if keys.is_empty() {
+            return None;
+        }
+        let mut hash = KEY_HASH_SEED;
+        for key in keys {
+            hash = key_hash_step(hash, *key);
+        }
+        let part: String = chars.iter().collect();
+        let mut best = 0.0f64;
+        for &entry in self.full.group(hash) {
+            let entry = entry as usize;
+            if !self.keys_equal(entry, keys) || self.word(entry) != part {
+                continue;
             }
+            best = best.max(self.freqs[entry]);
         }
-        map
-    }
-
-    /// 加载时被跳过的行数。
-    pub fn skipped(&self) -> usize {
-        self.skipped
-    }
-
-    /// 从 TSV 文件加载。
-    pub fn from_tsv_path<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let path = path.as_ref();
-        let data = fs::read_to_string(path)
-            .with_context(|| format!("读取词典失败: {}", path.display()))?;
-        let mut lex = Self::from_tsv_str(&data)?;
-        lex.estimate_placeholder_freqs(PLACEHOLDER_MIN_WORDS);
-        Ok(lex)
-    }
-}
-
-impl MemoryLexicon {
-    /// 索引里每组的生僻字都排在最后（见 add_entry），不要它们时只取前面那段。
-    fn without_rare<'a>(&self, idxs: &'a [usize], skip_rare: bool) -> &'a [usize] {
-        if skip_rare {
-            &idxs[..idxs.partition_point(|&i| !self.entries[i].is_rare())]
-        } else {
-            idxs
-        }
-    }
-
-    fn lookup_impl(&self, query: &[SyllableQuery], skip_rare: bool) -> Vec<LexEntry> {
-        let take = |&i: &usize| self.entries[i].clone();
-        if query.is_empty() {
-            return Vec::new();
-        }
-
-        let all_full = query
-            .iter()
-            .all(|q| matches!(q, SyllableQuery::Full { .. }));
-        let all_jianpin = query
-            .iter()
-            .all(|q| matches!(q, SyllableQuery::Jianpin { .. }));
-
-        if all_full {
-            let key: Vec<SyllableKey> = query
-                .iter()
-                .map(|q| match q {
-                    SyllableQuery::Full { id, erhua } => SyllableKey::new(*id, *erhua),
-                    _ => unreachable!(),
-                })
-                .collect();
-            return self
-                .full_index
-                .get(&key)
-                .map(|idxs| {
-                    self.without_rare(idxs, skip_rare)
-                        .iter()
-                        .map(take)
-                        .collect()
-                })
-                .unwrap_or_default();
-        }
-
-        if all_jianpin && !query.iter().any(needs_initial_check) {
-            let key: Vec<u8> = query
-                .iter()
-                .map(|q| match q {
-                    SyllableQuery::Jianpin { letter } => *letter,
-                    _ => unreachable!(),
-                })
-                .collect();
-            return self
-                .jianpin_index
-                .get(&key)
-                .map(|idxs| {
-                    self.without_rare(idxs, skip_rare)
-                        .iter()
-                        .map(take)
-                        .collect()
-                })
-                .unwrap_or_default();
-        }
-
-        // 全拼混简拼（k yi -> 可以）、zh/ch/sh 简拼：先按首字母查，再逐个比对
-        let Some(initials) = query_initials(query) else {
-            return Vec::new();
-        };
-        self.jianpin_index
-            .get(&initials)
-            .map(|idxs| {
-                self.without_rare(idxs, skip_rare)
-                    .iter()
-                    .filter(|&&i| entry_matches(&self.entries[i], query))
-                    .map(take)
-                    .collect()
-            })
-            .unwrap_or_default()
+        (best > 0.0).then_some(best)
     }
 }
 
@@ -631,7 +853,7 @@ impl Lexicon for MemoryLexicon {
             let hash = initials
                 .iter()
                 .fold(KEY_HASH_SEED, |h, &letter| initial_hash_step(h, letter));
-            return self.initial_prefixes.contains(&hash);
+            return self.initial_prefixes.binary_search(&hash).is_ok();
         }
         let mut hash = KEY_HASH_SEED;
         for q in query {
@@ -639,12 +861,12 @@ impl Lexicon for MemoryLexicon {
                 hash = key_hash_step(hash, SyllableKey::new(*id, *erhua));
             }
         }
-        self.full_prefixes.contains(&hash)
+        self.full_prefixes.binary_search(&hash).is_ok()
     }
 
     fn prepare_fuzzy(&self) {
         // 55 万条的词库约 0.2 秒
-        self.fuzzy_index.get_or_init(|| self.build_fuzzy_index());
+        self.fuzzy.get_or_init(|| self.build_fuzzy_index());
     }
 
     fn lookup_fuzzy(&self, query: &[SyllableQuery], groups: u32) -> Vec<LexEntry> {
@@ -652,7 +874,7 @@ impl Lexicon for MemoryLexicon {
             return Vec::new();
         }
         let mut ids = Vec::with_capacity(query.len());
-        let mut key = Vec::with_capacity(query.len());
+        let mut hash = KEY_HASH_SEED;
         for q in query {
             match q {
                 SyllableQuery::Full { id, erhua } => {
@@ -660,29 +882,30 @@ impl Lexicon for MemoryLexicon {
                         return Vec::new();
                     }
                     match crate::syllable::fuzzy_key(*id) {
-                        Some(canon) => key.push(canon),
+                        Some(canon) => {
+                            hash = fuzzy_hash_step(hash, canon);
+                            ids.push(*id);
+                        }
                         None => return Vec::new(),
                     }
-                    ids.push(*id);
                 }
                 SyllableQuery::Jianpin { .. } => return Vec::new(),
             }
         }
-        let index = self.fuzzy_index.get_or_init(|| self.build_fuzzy_index());
-        let Some(idxs) = index.get(&key) else {
-            return Vec::new();
-        };
+        let index = self.fuzzy.get_or_init(|| self.build_fuzzy_index());
         // 索引按全部分组归并，这里只留下「用到的分组都打开了」的词
-        idxs.iter()
-            .map(|&i| &self.entries[i])
-            .filter(|entry| {
-                entry.keys.len() == ids.len()
-                    && entry.keys.iter().zip(&ids).all(|(k, &q)| {
-                        crate::syllable::fuzzy_groups_between(q, k.id)
+        index
+            .group(hash)
+            .iter()
+            .map(|&entry| entry as usize)
+            .filter(|&entry| {
+                self.key_count(entry) == ids.len()
+                    && self.keys_at(entry).zip(&ids).all(|(key, &q)| {
+                        crate::syllable::fuzzy_groups_between(q, key.id)
                             .is_some_and(|need| need & !groups == 0)
                     })
             })
-            .cloned()
+            .map(|entry| self.entry(entry))
             .collect()
     }
 
@@ -691,7 +914,7 @@ impl Lexicon for MemoryLexicon {
     }
 
     fn len(&self) -> usize {
-        self.entries.len()
+        self.word_spans.len()
     }
 }
 
@@ -1076,27 +1299,6 @@ fn initial_hash_step(hash: u64, letter: u8) -> u64 {
     (hash ^ u64::from(letter)).wrapping_mul(0x1000_0000_01b3)
 }
 
-fn entry_matches(entry: &LexEntry, query: &[SyllableQuery]) -> bool {
-    if entry.keys.len() != query.len() {
-        return false;
-    }
-    query
-        .iter()
-        .zip(entry.keys.iter())
-        .enumerate()
-        .all(|(i, (q, key))| match q {
-            SyllableQuery::Full { id, erhua } => key.id == *id && key.erhua == *erhua,
-            SyllableQuery::Jianpin { letter } => {
-                match crate::syllable::jianpin_required_initial(*letter) {
-                    Some(initial) => {
-                        Syllable::from_id(key.id).is_some_and(|s| s.initial == initial)
-                    }
-                    None => entry.initials.get(i) == Some(letter),
-                }
-            }
-        })
-}
-
 /// 解析词表里的拼音字段。
 ///
 /// 允许：
@@ -1399,8 +1601,8 @@ mod tests {
     fn total_freq_and_cost() {
         let lex = lex();
         assert_eq!(lex.total_freq(), 2400.0);
-        let entry = &lex.entries[0];
-        assert!(lex.cost(entry) > 0.0);
+        let entry = lex.entry(0);
+        assert!(lex.cost(&entry) > 0.0);
     }
 
     #[test]
@@ -1496,7 +1698,9 @@ mod tests {
         assert!(cache_path(&path).exists(), "第一次加载应当写出快照");
         let second = MemoryLexicon::from_tsv_path_cached(&path).unwrap();
         assert_eq!(first.len(), second.len());
-        assert_eq!(first.entries, second.entries);
+        for i in 0..first.len() {
+            assert_eq!(first.entry(i), second.entry(i), "第 {i} 条对不上");
+        }
         assert_eq!(first.total_freq, second.total_freq);
         cleanup(&path);
     }
@@ -1551,7 +1755,13 @@ mod tests {
         .unwrap();
         let total = lex.total_freq;
         lex.estimate_placeholder_freqs(2);
-        let freq = |w: &str| lex.entries.iter().find(|e| e.word == w).unwrap().freq;
+        let freq = |w: &str| {
+            (0..lex.len())
+                .map(|i| lex.entry(i))
+                .find(|e| e.word == w)
+                .unwrap()
+                .freq
+        };
         // 不建议 = 不 × 建议 × 加成，高过「不见 + 一」这句
         let cost = |f: f64| -(f / total).ln();
         assert!(cost(freq("不建议")) < cost(freq("不见")) + cost(freq("一")));
