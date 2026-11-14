@@ -46,8 +46,10 @@ pub struct WordLm {
     scores_at: usize,
     /// 每个词在文件里的 (偏移, 长度)
     spans: Vec<(u32, u16)>,
-    /// 按词的字节序排好的词号，查词用二分（346k 词 ≈ 1.4 MB）
-    order: Vec<u32>,
+    /// 词 → 词号：开放寻址表（2 的幂），槽里存词号 + 1，0 表示空。
+    /// 346k 词用 1M 个槽（4 MB），查词一次哈希 + 通常一次比较；
+    /// 以前是按词二分（19 次 memcmp + 19 次 UTF-8 校验），束搜索每键要查上千次。
+    table: Vec<u32>,
 }
 
 impl WordLm {
@@ -95,10 +97,17 @@ impl WordLm {
                 scores_at + m * 4
             );
         }
-        let mut order: Vec<u32> = (0..n as u32).collect();
-        order.sort_unstable_by(|&a, &b| {
-            Self::word_of(bytes, &spans, a).cmp(Self::word_of(bytes, &spans, b))
-        });
+        let mut table = vec![0u32; (n * 3).next_power_of_two()];
+        let mask = table.len() - 1;
+        for id in 0..n as u32 {
+            let (offset, len) = spans[id as usize];
+            let word = &bytes[offset as usize..offset as usize + len as usize];
+            let mut slot = (hash_word(word) as usize) & mask;
+            while table[slot] != 0 {
+                slot = (slot + 1) & mask;
+            }
+            table[slot] = id + 1;
+        }
         let lm = Self {
             data,
             n,
@@ -108,7 +117,7 @@ impl WordLm {
             curs_at,
             scores_at,
             spans,
-            order,
+            table,
         };
         if lm.u32_at(lm.starts_at + n * 4) as usize != m || (0..n).any(|i| lm.range(i as u32).0 > lm.range(i as u32).1) {
             bail!("二元组索引坏了");
@@ -116,22 +125,33 @@ impl WordLm {
         Ok(lm)
     }
 
-    fn word_of<'a>(bytes: &'a [u8], spans: &[(u32, u16)], id: u32) -> &'a str {
-        let (offset, len) = spans[id as usize];
-        std::str::from_utf8(&bytes[offset as usize..offset as usize + len as usize]).unwrap_or("")
+    /// 词号对应的原始字节（查表时只比字节，不做 UTF-8 校验）。
+    fn word_bytes(&self, id: u32) -> &[u8] {
+        let (offset, len) = self.spans[id as usize];
+        let bytes = self.data.as_slice();
+        &bytes[offset as usize..offset as usize + len as usize]
     }
 
     fn word(&self, id: u32) -> &str {
-        Self::word_of(self.data.as_slice(), &self.spans, id)
+        std::str::from_utf8(self.word_bytes(id)).unwrap_or("")
     }
 
     /// 词在词表里的编号。
     pub fn id(&self, word: &str) -> Option<u32> {
-        let at = self
-            .order
-            .binary_search_by(|&id| self.word(id).cmp(word))
-            .ok()?;
-        Some(self.order[at])
+        let needle = word.as_bytes();
+        let mask = self.table.len() - 1;
+        let mut slot = (hash_word(needle) as usize) & mask;
+        loop {
+            let slot_value = self.table[slot];
+            if slot_value == 0 {
+                return None;
+            }
+            let id = slot_value - 1;
+            if self.word_bytes(id) == needle {
+                return Some(id);
+            }
+            slot = (slot + 1) & mask;
+        }
     }
 
     fn u32_at(&self, at: usize) -> u32 {
@@ -366,6 +386,16 @@ pub fn build(counts: &Counts, config: BuildConfig) -> Result<(Vec<u8>, usize, us
         }
     }
     Ok((out, words.len(), m))
+}
+
+/// 词表哈希（FNV-1a，按字节，不校验 UTF-8）。
+fn hash_word(bytes: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for &byte in bytes {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x1000_0000_01b3);
+    }
+    hash
 }
 
 #[cfg(test)]

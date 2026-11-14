@@ -1601,6 +1601,10 @@ pub struct CompiledLexicon {
     initial_prefix_at: usize,
     full_prefix_len: usize,
     initial_prefix_len: usize,
+    /// 索引的「目录」：按哈希前 16 位分桶，桶里是起始行号（65537 个 u32，256 KB）。
+    /// 查一个哈希先跳进对应的桶再二分，比在 174 万行上直接二分少一半以上的 cache miss。
+    full_radix: Vec<u32>,
+    jianpin_radix: Vec<u32>,
     /// 模糊音索引：默认不建（模糊音默认关），第一次模糊查询时在内存里建一次。
     fuzzy: OnceLock<HashIndex>,
 }
@@ -1642,7 +1646,7 @@ impl CompiledLexicon {
         {
             bail!("快照的段位置不对");
         }
-        Ok(Self {
+        let mut lexicon = Self {
             data,
             count,
             jianpin_len,
@@ -1655,8 +1659,61 @@ impl CompiledLexicon {
             initial_prefix_at,
             full_prefix_len,
             initial_prefix_len,
+            full_radix: Vec::new(),
+            jianpin_radix: Vec::new(),
             fuzzy: OnceLock::new(),
-        })
+        };
+        lexicon.full_radix = lexicon.radix_table(lexicon.full_at, count);
+        lexicon.jianpin_radix = lexicon.radix_table(lexicon.jianpin_at, jianpin_len);
+        Ok(lexicon)
+    }
+
+    /// 按哈希前 16 位做一张目录：第 i 项是「前 16 位小于 i」的第一行。
+    fn radix_table(&self, at: usize, len: usize) -> Vec<u32> {
+        let bytes = self.bytes();
+        let mut counts = vec![0u32; 65537];
+        for row in 0..len {
+            let hash = u64::from_le_bytes(bytes[at + row * 12..at + row * 12 + 8].try_into().unwrap());
+            counts[(hash >> 48) as usize + 1] += 1;
+        }
+        for bucket in 1..=65536 {
+            counts[bucket] += counts[bucket - 1];
+        }
+        counts
+    }
+
+    /// 哈希为 hash 的那些行在 [start, end) 里。
+    fn row_range(&self, at: usize, len: usize, radix: &[u32], hash: u64) -> (usize, usize) {
+        let bucket = (hash >> 48) as usize;
+        let (mut lo, mut hi) = if radix.is_empty() {
+            (0, len)
+        } else {
+            (radix[bucket] as usize, radix[bucket + 1] as usize)
+        };
+        let bytes = self.bytes();
+        let row_hash = |row: usize| {
+            u64::from_le_bytes(bytes[at + row * 12..at + row * 12 + 8].try_into().unwrap())
+        };
+        while lo < hi {
+            let mid = (lo + hi) / 2;
+            if row_hash(mid) < hash {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        let start = lo;
+        let mut hi2 = lo;
+        let mut end = if radix.is_empty() { len } else { radix[bucket + 1] as usize };
+        while hi2 < end {
+            let mid = (hi2 + end) / 2;
+            if row_hash(mid) == hash {
+                hi2 = mid + 1;
+            } else {
+                end = mid;
+            }
+        }
+        (start, end)
     }
 
     fn bytes(&self) -> &[u8] {
@@ -1768,32 +1825,9 @@ impl CompiledLexicon {
     }
 
     /// 索引里哈希为 hash 的那一段词条号（二分；碰撞的混进来，调用者核对读音）。
-    fn group(&self, at: usize, len: usize, hash: u64) -> &[u8] {
-        let bytes = self.bytes();
-        let rows = &bytes[at..at + len * 12];
-        let mut lo = 0usize;
-        let mut hi = len;
-        while lo < hi {
-            let mid = (lo + hi) / 2;
-            let h = u64::from_le_bytes(rows[mid * 12..mid * 12 + 8].try_into().unwrap());
-            if h < hash {
-                lo = mid + 1;
-            } else {
-                hi = mid;
-            }
-        }
-        let start = lo;
-        let mut hi = len;
-        while lo < hi {
-            let mid = (lo + hi) / 2;
-            let h = u64::from_le_bytes(rows[mid * 12..mid * 12 + 8].try_into().unwrap());
-            if h == hash {
-                lo = mid + 1;
-            } else {
-                hi = mid;
-            }
-        }
-        &rows[start * 12..lo * 12]
+    fn group(&self, at: usize, len: usize, radix: &[u32], hash: u64) -> &[u8] {
+        let (start, end) = self.row_range(at, len, radix, hash);
+        &self.bytes()[at + start * 12..at + end * 12]
     }
 
     fn entry_at_row(row: &[u8]) -> usize {
@@ -1882,7 +1916,7 @@ impl CompiledLexicon {
             for key in &keys {
                 hash = key_hash_step(hash, *key);
             }
-            let rows = self.group(self.full_at, self.count, hash);
+            let rows = self.group(self.full_at, self.count, &self.full_radix, hash);
             return self.collect(rows, skip_rare, |entry| self.keys_equal(entry, &keys));
         }
 
@@ -1898,7 +1932,7 @@ impl CompiledLexicon {
             for &letter in &letters {
                 hash = initial_hash_step(hash, letter);
             }
-            let rows = self.group(self.jianpin_at, self.jianpin_len, hash);
+            let rows = self.group(self.jianpin_at, self.jianpin_len, &self.jianpin_radix, hash);
             return self.collect(rows, skip_rare, |entry| self.initials_equal(entry, &letters));
         }
 
@@ -1909,7 +1943,7 @@ impl CompiledLexicon {
         for &letter in &initials {
             hash = initial_hash_step(hash, letter);
         }
-        let rows = self.group(self.jianpin_at, self.jianpin_len, hash);
+        let rows = self.group(self.jianpin_at, self.jianpin_len, &self.jianpin_radix, hash);
         self.collect(rows, skip_rare, |entry| self.matches(entry, query))
     }
 

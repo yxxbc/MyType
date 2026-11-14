@@ -16,7 +16,7 @@ macOS 上的拼音输入法，自己维护的一支。本地运行、打字不�
 | 词库常驻（单独测） | 590 MB | **39 MB**（脏页 3.4 MB） |
 | 语言模型 `words.lm` | 105 MB | **9 MB** |
 | 词库载入 | 1.3 s | **0.2 s** |
-| 最慢一次按键 | 2.64 ms | 2.9 ms |
+| 每次组句按键（200 例逐键） | 平均 ~4 ms / P99 36 ms（万象自己测的） | **平均 2.35 ms / P99 5.97 ms** |
 | 名字 / bundle id | WowType / io.github.gloridust… | **MyType / io.github.yxxbc.inputmethod.MyType** |
 | 版本 | 0.4.0 | 从 **0.5.0** 起自己编 |
 
@@ -39,10 +39,10 @@ export PATH="$HOME/.cargo/bin:$PATH"
 scripts/make-data.sh     # 雾凇词库 + english.txt + words.lm（联网下载，约一分钟）
 scripts/make-wubi.sh     # 五笔 86 码表
 macos/build.sh dist/data dist/macos
-macos/install.sh dist/macos/MyType-0.5.1-macos.zip
+macos/install.sh dist/macos/MyType-0.5.2-macos.zip
 ```
 
-产物在 `dist/macos/`：`MyType.app`、`MyType-0.5.1-macos.zip`（给 `install.sh`）、`MyType-0.5.1-macos.pkg`（双击装，装到 `~/Library/Input Methods`，不用管理员密码）。
+产物在 `dist/macos/`：`MyType.app`、`MyType-0.5.2-macos.zip`（给 `install.sh`）、`MyType-0.5.2-macos.pkg`（双击装，装到 `~/Library/Input Methods`，不用管理员密码）。
 
 装完 `install.sh` 会登记、打开并试着切过去。如果菜单栏的输入法菜单里没有它，
 到「系统设置 → 键盘 → 文字输入 → 输入法 → 编辑 → ＋ → 简体中文 → MyType」加一次，
