@@ -423,15 +423,22 @@ fn collect_spans(
 
     // 同一个结束位置内按「词典代价 + 纠错代价」排序截断。
     // 不能跨结束位置按词频截断：单字的频次天然比多字词高，会把长词全挤掉。
-    let mut by_end: HashMap<usize, Vec<Span>> = HashMap::new();
+    //
+    // 分组用「结束位置 - 起点」当下标（end 一定落在 pos 后面的 MAX_SYLLABLE_LEN 内），
+    // 不用 HashMap：乱输入时每键几千条 span，哈希和扩容比排序还贵。
+    let mut span_count = 0;
+    for span in &found {
+        span_count = span_count.max(span.word.end.saturating_sub(pos) + 1);
+    }
+    let mut groups: Vec<Vec<Span>> = (0..span_count).map(|_| Vec::new()).collect();
     for span in found {
-        by_end.entry(span.word.end).or_default().push(span);
+        groups[span.word.end - pos].push(span);
     }
     let mut out = Vec::new();
-    let mut ends: Vec<usize> = by_end.keys().copied().collect();
-    ends.sort_unstable();
-    for end in ends {
-        let mut group = by_end.remove(&end).unwrap_or_default();
+    for mut group in groups {
+        if group.is_empty() {
+            continue;
+        }
         group.sort_by(|a, b| {
             let extra = |s: &Span| {
                 (config.typo_cost * s.word.typos as f64 - config.swap_discount * s.word.swaps as f64)
@@ -442,11 +449,19 @@ fn collect_spans(
             ca.total_cmp(&cb)
                 .then_with(|| a.word.text.cmp(&b.word.text))
         });
-        // 同一个词可能经由不同切分到达，留代价最低的那个
-        let mut seen: HashMap<String, ()> = HashMap::new();
-        group.retain(|s| seen.insert(s.word.text.clone(), ()).is_none());
-        group.truncate(per_span);
-        out.extend(group);
+        // 同一个词可能经由不同切分到达，留代价最低的那个：排好序以后取第一次出现的，
+        // 集齐 per_span 个就停（组一般只有几个到几十个，线性比较比再建一张哈希表快）
+        let mut keep: Vec<Span> = Vec::with_capacity(per_span.min(group.len()));
+        for span in group {
+            if keep.iter().any(|kept| kept.word.text == span.word.text) {
+                continue;
+            }
+            keep.push(span);
+            if keep.len() == per_span {
+                break;
+            }
+        }
+        out.extend(keep);
     }
 
     // 未知音节兜底：每条精确边都允许直接当作一个未登录词，保证任何合法输入都能走到底。

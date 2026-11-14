@@ -420,7 +420,15 @@ final class CandidatePanel {
             // 下面放不下就放到这一行上面
             y = anchor.maxY + gap
         }
-        x = min(max(x, visible.minX), visible.maxX - size.width)
+        // 面板比屏幕还宽时（候选很长、或者一页里塞了很多），不能按「右边界对齐」夹——
+        // 那样会把面板整个推到屏幕左边外面，只剩最后几个候选看得见，第一个候选跑到最右边，
+        // 看着就是「候选怎么从右往左排」。这里保证左边界贴住屏幕，超出的部分裁掉，
+        // 至少第一个候选和它的序号是对的。
+        if size.width > visible.width {
+            x = visible.minX
+        } else {
+            x = min(max(x, visible.minX), visible.maxX - size.width)
+        }
         y = min(max(y, visible.minY), visible.maxY - size.height)
         return NSPoint(x: x, y: y)
     }
