@@ -7,18 +7,18 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>zh-Hans</string>
 	<key>CFBundleDisplayName</key>
-	<string>WowType</string>
+	<string>MyType</string>
 	<key>CFBundleExecutable</key>
-	<string>WowType</string>
-	<!-- 设置窗口（WowType --settings）在程序坞里的图标，build.sh 生成；菜单栏里的图标是下面的 menu.pdf -->
+	<string>MyType</string>
+	<!-- 设置窗口（MyType --settings）在程序坞里的图标，build.sh 生成；菜单栏里的图标是下面的 menu.pdf -->
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
-	<string>io.github.gloridust.inputmethod.WowType</string>
+	<string>io.github.yxxbc.inputmethod.MyType</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>WowType</string>
+	<string>MyType</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -33,19 +33,19 @@
 	<false/>
 	<!-- 语音输入：第一次按语音键时系统会问要不要允许 -->
 	<key>NSMicrophoneUsageDescription</key>
-	<string>按住语音键说话，WowType 在本机把说的话识别成文字。</string>
+	<string>按住语音键说话，MyType 在本机把说的话识别成文字。</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>TISInputSourceID</key>
-	<string>io.github.gloridust.inputmethod.WowType</string>
+	<string>io.github.yxxbc.inputmethod.MyType</string>
 	<key>InputMethodConnectionName</key>
-	<string>io.github.gloridust.inputmethod.WowType_Connection</string>
+	<string>io.github.yxxbc.inputmethod.MyType_Connection</string>
 	<key>InputMethodServerControllerClass</key>
-	<string>WowTypeInputController</string>
+	<string>MyTypeInputController</string>
 	<key>InputMethodServerDelegateClass</key>
-	<string>WowTypeInputController</string>
-	<!-- 图标是单色模板图（icons/macos/make-icons.swift 生成的矢量 PDF）：黑色 + 透明，系统按菜单栏深浅色上色，
-	     和系统自带的输入法、微信输入法一样。menu.pdf 是 16pt 的圆里挖出 W；caret@2x.pdf 只有 W，
+	<string>MyTypeInputController</string>
+	<!-- 图标是单色模板图（icons/mytype/make-icons.swift 生成的矢量 PDF）：黑色 + 透明，系统按菜单栏深浅色上色，
+	     和系统自带的输入法、微信输入法一样。menu.pdf 是 16pt 的圆里挖出 M；caret@2x.pdf 只有 M，
 	     切换输入法时光标旁的提示气泡用它（TISIconLabels → CustomIcon，照系统自带的 AinuIM 写）。 -->
 	<key>TISIconIsTemplate</key>
 	<true/>
@@ -57,10 +57,10 @@
 	<dict>
 		<key>tsInputModeListKey</key>
 		<dict>
-			<key>io.github.gloridust.inputmethod.WowType.Hans</key>
+			<key>io.github.yxxbc.inputmethod.MyType.Hans</key>
 			<dict>
 				<key>TISInputSourceID</key>
-				<string>io.github.gloridust.inputmethod.WowType.Hans</string>
+				<string>io.github.yxxbc.inputmethod.MyType.Hans</string>
 				<key>TISIntendedLanguage</key>
 				<string>zh-Hans</string>
 				<key>tsInputModeCharacterRepertoireKey</key>
@@ -92,7 +92,7 @@
 		</dict>
 		<key>tsVisibleInputModeOrderedArrayKey</key>
 		<array>
-			<string>io.github.gloridust.inputmethod.WowType.Hans</string>
+			<string>io.github.yxxbc.inputmethod.MyType.Hans</string>
 		</array>
 	</dict>
 </dict>

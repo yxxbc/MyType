@@ -8,7 +8,7 @@ import CryptoKit
 import Foundation
 
 enum LexiconPackInstaller {
-    static let releaseAPI = URL(string: "https://api.github.com/repos/Gloridust/WowType/releases/latest")!
+    static let releaseAPI = URL(string: "https://api.github.com/repos/Gloridust/MyType/releases/latest")!
 
     struct Release {
         let tag: String
@@ -21,7 +21,7 @@ enum LexiconPackInstaller {
         }
     }
 
-    /// 装万象的目录：~/Library/Application Support/WowType/dicts/wanxiang
+    /// 装万象的目录：~/Library/Application Support/MyType/dicts/wanxiang
     static func folder(in supportDir: URL) -> URL {
         supportDir.appendingPathComponent(LexiconPack.folderName, isDirectory: true)
     }
@@ -74,7 +74,7 @@ enum LexiconPackInstaller {
         var request = URLRequest(url: url, timeoutInterval: timeout)
         request.setValue(url.host == "api.github.com" ? "application/vnd.github+json" : "*/*",
                          forHTTPHeaderField: "Accept")
-        request.setValue("WowType", forHTTPHeaderField: "User-Agent")
+        request.setValue("MyType", forHTTPHeaderField: "User-Agent")
         let done = DispatchSemaphore(value: 0)
         var result: Result<Data, Error> = .failure(PackError("连不上 GitHub"))
         URLSession.shared.dataTask(with: request) { data, response, error in
@@ -206,7 +206,7 @@ private final class DownloadTask: NSObject, URLSessionDownloadDelegate {
     func run() throws -> URL {
         let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
         var request = URLRequest(url: url, timeoutInterval: 60)
-        request.setValue("WowType", forHTTPHeaderField: "User-Agent")
+        request.setValue("MyType", forHTTPHeaderField: "User-Agent")
         session.downloadTask(with: request).resume()
         done.wait()
         session.finishTasksAndInvalidate()

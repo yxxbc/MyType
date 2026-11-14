@@ -1,4 +1,4 @@
-// macOS 外壳测试：把照真键盘造的 NSEvent 喂给真的输入控制器（WowTypeInputController.handle），
+// macOS 外壳测试：把照真键盘造的 NSEvent 喂给真的输入控制器（MyTypeInputController.handle），
 // 看假输入框收到的编辑区、光标、上屏，和候选框（CandidatePanel）排出来、画出来的这一页。
 //
 //   macos/ShellTests/run.sh <数据目录>

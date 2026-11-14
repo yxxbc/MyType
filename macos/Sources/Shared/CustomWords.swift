@@ -1,4 +1,4 @@
-// 自定义词（常用语）：~/Library/Application Support/WowType/custom.tsv，格式同 Linux 的
+// 自定义词（常用语）：~/Library/Application Support/MyType/custom.tsv，格式同 Linux 的
 // ~/.local/share/wowtype/custom.tsv：一行一个「编码<TAB>词[<TAB>频次]」，# 开头是注释。
 //
 // 设置窗口的「自定义词」页用：加词、删词、导入、导出，规则照 Linux 设置界面（settings/wowtype-config 的
@@ -31,8 +31,8 @@ public struct CustomWords: Equatable {
 
     /// 新文件开头的说明（和 Linux 设置界面写的一样）
     public static let header = """
-    # WowType 自定义词：编码<TAB>词。编码是拼音（空格分开音节），也可以是 mail 这类字母；
-    # 词里写 \\n 表示换行。由 WowType 设置维护，也可以手动编辑。
+    # MyType 自定义词：编码<TAB>词。编码是拼音（空格分开音节），也可以是 mail 这类字母；
+    # 词里写 \\n 表示换行。由 MyType 设置维护，也可以手动编辑。
     """
 
     /// 读文件的原文；nil（还没有文件）是只有说明的空表。

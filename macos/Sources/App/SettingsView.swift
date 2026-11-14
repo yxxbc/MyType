@@ -104,7 +104,7 @@ private struct Sidebar: View {
                     .resizable()
                     .frame(width: 36, height: 36)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("WowType").font(.system(size: 17, weight: .heavy))
+                    Text("MyType").font(.system(size: 17, weight: .heavy))
                     Text("设置").font(.caption).foregroundColor(.secondary)
                 }
             }
@@ -182,7 +182,7 @@ private struct ToastView: View {
 
 // MARK: 常规
 
-private let issuesURL = URL(string: "https://github.com/Gloridust/WowType/issues/new")!
+private let issuesURL = URL(string: "https://github.com/Gloridust/MyType/issues/new")!
 /// 系统设置的「键盘」（只打开，不改系统设置）
 private let keyboardSettingsURL = URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension")!
 
@@ -190,7 +190,7 @@ private let keyboardSettingsURL = URL(string: "x-apple.systempreferences:com.app
 private let toggleKeyInfo = "按它在中文、英文之间切（在「译」里按回到中文）。单按 Shift 照常能用。"
 private let translateModeKeyInfo = "按它进「译」，在「译」里再按回到原来的模式。设了它，单按 Shift 就只在中文、英文之间切。\n\n"
     + "要先在「翻译」页打开互译；没打开、密码框里这个键交给应用。"
-private let systemKeyNote = "\n\n系统的快捷键（比如 Control+空格）先处理，设成它们 WowType 收不到。"
+private let systemKeyNote = "\n\n系统的快捷键（比如 Control+空格）先处理，设成它们 MyType 收不到。"
 
 private struct GeneralPage: View {
     @ObservedObject var model: SettingsModel
@@ -276,9 +276,9 @@ private struct InputPage: View {
 
     var body: some View {
         PrefGroup("词库", info: "换词库几秒后生效，自定义词和学到的习惯都会保留。\n\n"
-                  + "雾凇拼音在安装包里，跟着 WowType 一起更新。\n\n"
+                  + "雾凇拼音在安装包里，跟着 MyType 一起更新。\n\n"
                   + "万象拼音词更多，比雾凇多占约 300 MB 内存；从 amzxyz/rime_wanxiang（CC BY 4.0）转换，只用了它的词条。"
-                  + "装在 ~/Library/Application Support/WowType/dicts/wanxiang。",
+                  + "装在 ~/Library/Application Support/MyType/dicts/wanxiang。",
                   links: [("万象拼音项目主页", URL(string: "https://github.com/amzxyz/rime_wanxiang")!)]) {
             RadioRow(title: "雾凇拼音（默认）", subtitle: "在安装包里，不用下载", selected: model.lexiconKind == .rimeIce) {
                 model.useRimeIce()
@@ -330,7 +330,7 @@ private struct InputPage: View {
             RowDivider()
             RadioRow(title: WowtypeConfig.InputScheme.wubi86.name,
                      subtitle: model.wubiTableAvailable ? "86 版，z 键临时打拼音"
-                         : "没有找到五笔码表 wubi86.tsv，重新安装 WowType 可以修好",
+                         : "没有找到五笔码表 wubi86.tsv，重新安装 MyType 可以修好",
                      selected: model.config.wubi) {
                 model.config.inputScheme = .wubi86
             }
@@ -347,10 +347,10 @@ private struct InputPage: View {
         PrefGroup("中英文切换", info: "单按一下 Shift 切到英文，字母和半角标点直接上屏，再按一下回到中文。"
                   + "打到一半切英文，已经打的字母原样上屏。") {
             // macOS 自己的切换：不经过输入法，哪个应用里都管用
-            ActionRow(title: "中/英 键（大写锁定键）", subtitle: "系统设置里打开后，在 WowType 和 ABC 之间切，所有应用里都管用",
+            ActionRow(title: "中/英 键（大写锁定键）", subtitle: "系统设置里打开后，在 MyType 和 ABC 之间切，所有应用里都管用",
                       info: "在「系统设置 → 键盘 → 文字输入 → 输入法」点「编辑…」，打开"
                           + "「使用“中/英”键切换“ABC”输入法」（键盘上没有 中/英 键时叫「使用大写锁定键切换“ABC”输入法」）。"
-                          + "打开以后按一下这个键在 WowType 和 ABC 之间切。") {
+                          + "打开以后按一下这个键在 MyType 和 ABC 之间切。") {
                 Button("打开键盘设置") { NSWorkspace.shared.open(keyboardSettingsURL) }
             }
             RowDivider()
@@ -534,9 +534,9 @@ private struct VoicePage: View {
                 .disabled(!ready || !model.config.voice)
         }
         PrefGroup("识别模型", info: "在本机识别，录音不上传。语音模型是微信输入法的离线语音包，属于腾讯，"
-                  + "从腾讯的服务器下载，WowType 不分发它；和这台电脑装没装微信输入法无关。\n\n"
-                  + "模型放在 ~/Library/Application Support/WowType/wtlocal。第一次用语音时系统会问要不要允许 WowType 使用麦克风；"
-                  + "WowType 每次更新后系统可能会再问一次。") {
+                  + "从腾讯的服务器下载，MyType 不分发它；和这台电脑装没装微信输入法无关。\n\n"
+                  + "模型放在 ~/Library/Application Support/MyType/wtlocal。第一次用语音时系统会问要不要允许 MyType 使用麦克风；"
+                  + "MyType 每次更新后系统可能会再问一次。") {
             HStack(spacing: 10) {
                 RowLabel(title: "语音模型", subtitle: model.voiceModelStatus)
                 if let (done, total) = model.voiceProgress {
@@ -618,8 +618,8 @@ private struct TranslatePage: View {
     private var serviceGroup: some View {
         PrefGroup("翻译服务", info: "选一家服务商，填它给你的 Key，再挑一个模型。翻译要等服务回话，"
                   + "名字里带 mini、flash、turbo 的小模型更快。\n\n"
-                  + "隐私：只在切到「译」时把打的字发给你选的服务，密码框里不翻译；WowType 自己不经手、不收集。"
-                  + "Key 只存在这台电脑上（~/Library/Application Support/WowType/translate.key，只有你能读）。") {
+                  + "隐私：只在切到「译」时把打的字发给你选的服务，密码框里不翻译；MyType 自己不经手、不收集。"
+                  + "Key 只存在这台电脑上（~/Library/Application Support/MyType/translate.key，只有你能读）。") {
             PickerRow(title: "服务商", selection: provider, options: translateProviders.map { ($0.name, $0.name) })
             RowDivider()
             TextRow(title: "接口地址", placeholder: "https://…/v1", text: trimmed(\.translateBaseUrl))
@@ -660,7 +660,7 @@ private struct TranslatePage: View {
                            value: $model.config.translateIdleMinutes, range: 0...240)
                 if model.localDeletable {
                     RowDivider()
-                    ActionRow(title: "删除模型", info: "连同 WowType 下载的 llama-server 一起删；Homebrew 装的、"
+                    ActionRow(title: "删除模型", info: "连同 MyType 下载的 llama-server 一起删；Homebrew 装的、"
                               + "自己写了位置的模型不动。") {
                         Button("删除") { model.removeLocalModel() }
                             .disabled(model.localBusy)

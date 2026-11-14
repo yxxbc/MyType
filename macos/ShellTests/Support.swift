@@ -122,7 +122,7 @@ final class FakeTextInput: NSObject, IMKTextInput {
 }
 
 /// 真的输入控制器，只把 client() 换成假的输入框（系统里它是跨进程的代理）。
-final class TestController: WowTypeInputController {
+final class TestController: MyTypeInputController {
     var fake: FakeTextInput?
 
     override func client() -> (any IMKTextInput & NSObjectProtocol)! {

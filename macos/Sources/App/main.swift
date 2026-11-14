@@ -1,6 +1,6 @@
-// WowType 的 macOS 输入法进程。
+// MyType 的 macOS 输入法进程。
 //
-//   WowType.app/Contents/MacOS/WowType              输入法服务（系统按需启动）
+//   MyType.app/Contents/MacOS/MyType              输入法服务（系统按需启动）
 //   … --register | --enable | --select | --disable  向系统登记 / 打开 / 切换 / 关闭（install.sh 用）
 //   … --selftest                                    载入安装包里的词库打一句话，CI 用来检查链接和资源
 //   … --settings [general|input|emoji|voice|translate|words] 设置窗口（另一个进程，输入法菜单里「设置…」开的就是它）
@@ -23,7 +23,7 @@ final class SelfTestClient: TextClient {
 }
 
 func selfTest() -> Bool {
-    print("WowType \(appVersion)，核心接口版本 \(Engine.abiVersion)")
+    print("MyType \(appVersion)，核心接口版本 \(Engine.abiVersion)")
     print("资源目录 \(AppState.shared.resourceDir.path)")
     print("数据目录 \(AppState.shared.supportDir.path)")
     for name in ["lexicon.tsv", "english.txt", "words.lm", "s2t.tsv", "wubi86.tsv"] {
@@ -72,11 +72,11 @@ func lexiconCommand(_ args: [String]) -> Bool {
     let lexicon: String
     if args[0] == "--use-lexicon" {
         guard args.count == 2, ["rime-ice", "wanxiang"].contains(args[1]) else {
-            print("用法：WowType --use-lexicon rime-ice|wanxiang")
+            print("用法：MyType --use-lexicon rime-ice|wanxiang")
             return false
         }
         if args[1] == "wanxiang" && LexiconPack.installedVersion(folder: LexiconPackInstaller.folder(in: state.supportDir).path) == nil {
-            print("还没装万象词库，先运行 WowType --install-lexicon wanxiang")
+            print("还没装万象词库，先运行 MyType --install-lexicon wanxiang")
             return false
         }
         lexicon = args[1] == "wanxiang" ? wanxiang : ""
@@ -217,7 +217,7 @@ func voiceModelCommand(_ args: [String]) -> Bool {
 /// 测试用：不开麦克风，读 wav（16kHz 单声道）当成按住语音键说的话，打印识别结果。
 func voiceTest(_ wav: String) -> Bool {
     guard !wav.isEmpty else {
-        print("用法：WowType --voice-test 说的话.wav")
+        print("用法：MyType --voice-test 说的话.wav")
         return false
     }
     setenv("WOWTYPE_VOICE_WAV", wav, 1)
@@ -265,7 +265,7 @@ if arguments.count > 1 {
         print(appVersion)
         ok = true
     default:
-        print("用法：WowType [--register | --enable | --select | --disable | --selftest | --settings [页面] | --version |\n"
+        print("用法：MyType [--register | --enable | --select | --disable | --selftest | --settings [页面] | --version |\n"
               + "              --install-lexicon [wanxiang | 文件.tar.gz] | --use-lexicon rime-ice|wanxiang |\n"
               + "              --download-model [--accept-license] | --install-voice-model [语音包.apk] |\n"
               + "              --remove-voice-model | --voice-test 说的话.wav]")
@@ -294,14 +294,14 @@ terminationSource.resume()
 
 // 核心的接口主版本要和编译时的头文件一样（docs/ABI.md）：静态链接时一定对得上，改成动态库以后装错了版本就别跑
 if Int(wowtype_abi_version()) / 1000 != Int(WOWTYPE_ABI_VERSION_MAJOR) {
-    NSLog("WowType: 核心接口版本 %d 和编译时的主版本 %d 对不上", wowtype_abi_version(), WOWTYPE_ABI_VERSION_MAJOR)
+    NSLog("MyType: 核心接口版本 %d 和编译时的主版本 %d 对不上", wowtype_abi_version(), WOWTYPE_ABI_VERSION_MAJOR)
     exit(1)
 }
 
 guard let connection = Bundle.main.object(forInfoDictionaryKey: "InputMethodConnectionName") as? String,
       let bundleID = Bundle.main.bundleIdentifier
 else {
-    NSLog("WowType: Info.plist 里缺 InputMethodConnectionName 或 CFBundleIdentifier")
+    NSLog("MyType: Info.plist 里缺 InputMethodConnectionName 或 CFBundleIdentifier")
     exit(1)
 }
 let server = IMKServer(name: connection, bundleIdentifier: bundleID)

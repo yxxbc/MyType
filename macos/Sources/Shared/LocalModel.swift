@@ -12,7 +12,7 @@ public enum LocalModel {
     public static let license = page + "/blob/main/License.txt"
     /// 下载前给用户看的许可要点
     public static let terms = "模型属于腾讯，用的是《腾讯混元社区许可协议》：不适用于欧盟、英国和韩国境内，"
-        + "月活超过 1 亿的产品要另外向腾讯申请。模型从 Hugging Face 下载，WowType 不分发它。"
+        + "月活超过 1 亿的产品要另外向腾讯申请。模型从 Hugging Face 下载，MyType 不分发它。"
 
     /// llama.cpp 官方发布的构建（MIT 许可），和 Linux 的一样
     public static let llamaBuild = "b12110"

@@ -1,4 +1,4 @@
-// 设置窗口：同一个安装包，另起一个进程（WowType --settings [页面]），像 Linux 上单独的 wowtype-config。
+// 设置窗口：同一个安装包，另起一个进程（MyType --settings [页面]），像 Linux 上单独的 wowtype-config。
 //
 // 不放在输入法进程里开窗口：输入法自己进程里的输入框用不了自己（加自定义词要打中文），
 // 窗口出了问题也不会带倒输入法。设置窗口只写 wowtype.conf / custom.tsv，输入法下一次按键时自己重新读。
@@ -8,7 +8,7 @@ import SwiftUI
 
 enum SettingsApp {
     /// 设置窗口已经开着时，输入法让它切到某一页、到前面来
-    static let showNotification = Notification.Name("io.github.gloridust.inputmethod.WowType.ShowSettings")
+    static let showNotification = Notification.Name("io.github.yxxbc.inputmethod.MyType.ShowSettings")
 
     /// 输入法菜单里调：打开设置窗口；已经开着就切过去。
     static func open(page: SettingsPage? = nil) {
@@ -31,12 +31,12 @@ enum SettingsApp {
         }
         NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: config) { _, error in
             if let error {
-                NSLog("WowType: 打开设置窗口失败 %@", error.localizedDescription)
+                NSLog("MyType: 打开设置窗口失败 %@", error.localizedDescription)
             }
         }
     }
 
-    /// `WowType --settings [general|input|emoji|words]`：设置窗口进程，关掉窗口就退出。
+    /// `MyType --settings [general|input|emoji|words]`：设置窗口进程，关掉窗口就退出。
     static func run(page: String?) -> Never {
         let app = NSApplication.shared
         let delegate = SettingsAppDelegate(page: page.flatMap(SettingsPage.init(rawValue:)) ?? .general)
@@ -63,17 +63,17 @@ final class SettingsAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 860, height: 680),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                           backing: .buffered, defer: false)
-        window.title = "WowType 设置"
+        window.title = "MyType 设置"
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.isReleasedWhenClosed = false
         window.contentMinSize = NSSize(width: 640, height: 460)
         window.contentView = NSHostingView(rootView: SettingsView(model: model))
         window.delegate = self
-        if !window.setFrameUsingName("WowTypeSettings") {
+        if !window.setFrameUsingName("MyTypeSettings") {
             window.center()
         }
-        window.setFrameAutosaveName("WowTypeSettings")
+        window.setFrameAutosaveName("MyTypeSettings")
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
@@ -113,16 +113,16 @@ final class SettingsAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
     private func makeMainMenu() -> NSMenu {
         let main = NSMenu()
 
-        let app = submenu(main, "WowType")
-        add(app, "关于 WowType", #selector(showAbout))
+        let app = submenu(main, "MyType")
+        add(app, "关于 MyType", #selector(showAbout))
         app.addItem(.separator())
         add(app, "恢复默认设置…", #selector(resetToDefaults))
         app.addItem(.separator())
-        add(app, "隐藏 WowType", #selector(NSApplication.hide(_:)), "h", target: nil)
+        add(app, "隐藏 MyType", #selector(NSApplication.hide(_:)), "h", target: nil)
         add(app, "隐藏其他", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option], target: nil)
         add(app, "全部显示", #selector(NSApplication.unhideAllApplications(_:)), target: nil)
         app.addItem(.separator())
-        add(app, "退出 WowType", #selector(NSApplication.terminate(_:)), "q", target: nil)
+        add(app, "退出 MyType", #selector(NSApplication.terminate(_:)), "q", target: nil)
 
         let file = submenu(main, "文件")
         add(file, "用文本编辑打开设置文件", #selector(openConfigFile))
@@ -171,7 +171,7 @@ final class SettingsAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
             attributes: [.font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
                          .foregroundColor: NSColor.secondaryLabelColor])
         NSApp.orderFrontStandardAboutPanel(options: [
-            .applicationName: "WowType",
+            .applicationName: "MyType",
             .applicationVersion: appVersion,
             .version: "",
             .credits: credits,

@@ -59,7 +59,7 @@ enum LocalModelInstaller {
 
     // MARK: 下载什么
 
-    /// Apple 芯片（用 Rosetta 跑 x86_64 的 WowType 时也算）是 arm64
+    /// Apple 芯片（用 Rosetta 跑 x86_64 的 MyType 时也算）是 arm64
     static var machine: String {
         var arm64: Int32 = 0
         var size = MemoryLayout<Int32>.size
@@ -367,7 +367,7 @@ private final class ResumableDownload: NSObject, URLSessionDataDelegate {
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
         let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
         var request = URLRequest(url: url, timeoutInterval: 30)
-        request.setValue("WowType/\(appVersion)", forHTTPHeaderField: "User-Agent")
+        request.setValue("MyType/\(appVersion)", forHTTPHeaderField: "User-Agent")
         if have > 0 {
             request.setValue("bytes=\(have)-", forHTTPHeaderField: "Range")
         }

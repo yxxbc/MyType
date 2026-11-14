@@ -1,6 +1,6 @@
 // IMK 输入控制器：每个输入框一个。按键翻译成 KeyInput 交给 Composer，Composer 通过 TextClient 回来写字。
 //
-// 类名要和 Info.plist 里的 InputMethodServerControllerClass 一样（WowTypeInputController）。
+// 类名要和 Info.plist 里的 InputMethodServerControllerClass 一样（MyTypeInputController）。
 // 不是 final：外壳测试（macos/ShellTests）用子类换掉 client()，给它一个假的输入框。
 
 import AppKit
@@ -9,11 +9,11 @@ import InputMethodKit
 import os
 
 /// 修饰键事件的调试记录（debug 级别，平时不记）。看某个应用里单按 Shift 收到了什么：
-/// log stream --level debug --predicate 'subsystem == "WowType" && category == "flags"'
-private let flagsLog = Logger(subsystem: "WowType", category: "flags")
+/// log stream --level debug --predicate 'subsystem == "MyType" && category == "flags"'
+private let flagsLog = Logger(subsystem: "MyType", category: "flags")
 
-@objc(WowTypeInputController)
-class WowTypeInputController: IMKInputController {
+@objc(MyTypeInputController)
+class MyTypeInputController: IMKInputController {
     private var composer: Composer!
     /// 上一次给应用的编辑区和光标，一样就不再发（每次上屏后 Composer 都会清一次编辑区）。
     /// 光标也要比：方向键移光标时字没变、光标变了
@@ -189,12 +189,12 @@ class WowTypeInputController: IMKInputController {
 
     override func menu() -> NSMenu! {
         let menu = NSMenu()
-        let item = NSMenuItem(title: "WowType \(appVersion)", action: nil, keyEquivalent: "")
+        let item = NSMenuItem(title: "MyType \(appVersion)", action: nil, keyEquivalent: "")
         item.isEnabled = false
         menu.addItem(item)
         menu.addItem(.separator())
         // 设置窗口是另一个进程（SettingsApp）；直接改文件的入口在设置窗口的「文件」菜单里
-        for (title, action) in [("WowType 设置…", #selector(openSettings)),
+        for (title, action) in [("MyType 设置…", #selector(openSettings)),
                                 ("自定义词…", #selector(openCustomWords)),
                                 ("设置互译 API Key…", #selector(editTranslateKey)),
                                 ("打开数据目录", #selector(openDataFolder))] {
@@ -230,7 +230,7 @@ class WowTypeInputController: IMKInputController {
     }
 }
 
-extension WowTypeInputController: TextClient {
+extension MyTypeInputController: TextClient {
     func insertText(_ text: String) {
         guard let client = textInput else { return }
         client.insertText(text, replacementRange: noRange())
@@ -317,7 +317,7 @@ let appVersion = (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersion
 
 // MARK: 语音输入
 
-extension WowTypeInputController: VoiceHost {
+extension MyTypeInputController: VoiceHost {
     func voiceShow(status: String?, partial: String) {
         setMarkedText(partial, cursor: partial.utf16.count)
         guard let status else {

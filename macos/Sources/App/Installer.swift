@@ -5,7 +5,7 @@ import Carbon
 import Foundation
 
 enum Installer {
-    static let bundleID = Bundle.main.bundleIdentifier ?? "io.github.gloridust.inputmethod.WowType"
+    static let bundleID = Bundle.main.bundleIdentifier ?? "io.github.yxxbc.inputmethod.MyType"
     static var modeID: String { bundleID + ".Hans" }
 
     static func register() -> Bool {
@@ -57,7 +57,7 @@ enum Installer {
             return false
         }
         let status = TISSelectInputSource(source)
-        print(status == noErr ? "已切到 WowType" : "切换失败（\(status)）")
+        print(status == noErr ? "已切到 MyType" : "切换失败（\(status)）")
         return status == noErr
     }
 

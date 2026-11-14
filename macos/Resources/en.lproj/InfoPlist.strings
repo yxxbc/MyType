@@ -1,7 +1,7 @@
 /* 输入法菜单和「系统设置 → 键盘 → 输入法」里显示的名字（键是 Info.plist 里的输入模式 ID） */
-"CFBundleName" = "WowType";
-"CFBundleDisplayName" = "WowType";
-"io.github.gloridust.inputmethod.WowType" = "WowType";
-"io.github.gloridust.inputmethod.WowType.Hans" = "WowType";
+"CFBundleName" = "MyType";
+"CFBundleDisplayName" = "MyType";
+"io.github.yxxbc.inputmethod.MyType" = "MyType";
+"io.github.yxxbc.inputmethod.MyType.Hans" = "MyType";
 
-"NSMicrophoneUsageDescription" = "Hold the voice key and speak; WowType turns your speech into text on this Mac.";
+"NSMicrophoneUsageDescription" = "Hold the voice key and speak; MyType turns your speech into text on this Mac.";

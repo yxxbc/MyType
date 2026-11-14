@@ -11,7 +11,7 @@ import AVFoundation
 import Carbon
 import CWowtype
 
-/// 语音输入要在哪个输入框里显示、上屏（WowTypeInputController 实现）。
+/// 语音输入要在哪个输入框里显示、上屏（MyTypeInputController 实现）。
 protocol VoiceHost: AnyObject {
     /// status 是候选框里的提示（nil 收起），partial 是编辑区里识别到一半的字
     func voiceShow(status: String?, partial: String)
@@ -133,10 +133,10 @@ final class VoiceInput {
         case .notDetermined:
             // 第一次用：系统弹窗问要不要允许，同意以后再按一次
             AVCaptureDevice.requestAccess(for: .audio) { _ in }
-            hint("请允许 WowType 使用麦克风，然后再按一次语音键", host: host)
+            hint("请允许 MyType 使用麦克风，然后再按一次语音键", host: host)
             return true
         default:
-            hint("麦克风没打开：系统设置 → 隐私与安全性 → 麦克风，打开 WowType", host: host)
+            hint("麦克风没打开：系统设置 → 隐私与安全性 → 麦克风，打开 MyType", host: host)
             return true
         }
         keyDown = true
@@ -209,7 +209,7 @@ final class VoiceInput {
             }
             return false
         case Int(WOWTYPE_VOICE_ERROR):
-            NSLog("WowType: 语音 %@", text)
+            NSLog("MyType: 语音 %@", text)
             host.voiceShow(status: "🎙 " + text, partial: "")
             // 没下载模型的提示要去设置里操作，多留一会儿
             let missing = Int(wowtype_voice_model_state(handle)) == Int(WOWTYPE_VOICE_MODEL_MISSING)

@@ -25,7 +25,7 @@ app_sources=()
 for f in macos/Sources/App/*.swift; do
   [[ "$(basename "$f")" == main.swift ]] || app_sources+=("$f")
 done
-swiftc -O -module-name WowType -I macos/CWowtype \
+swiftc -O -module-name MyType -I macos/CWowtype \
   macos/Sources/Shared/*.swift "${app_sources[@]}" macos/ShellTests/*.swift \
   "$TARGET_DIR/release/libwowtype_core.a" \
   -framework Cocoa -framework InputMethodKit -framework Carbon -framework SwiftUI \

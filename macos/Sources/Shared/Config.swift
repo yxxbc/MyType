@@ -1,4 +1,4 @@
-// 设置：~/Library/Application Support/WowType/wowtype.conf。
+// 设置：~/Library/Application Support/MyType/wowtype.conf。
 //
 // 键名、取值、默认值和 Linux 的 ~/.config/fcitx5/conf/wowtype.conf 一样，一份配置两边都能用。
 // 以 spec/config.json 为准（设置契约，说明见 docs/CONFIG.md）：改键名、默认值、范围、可选值要先改规格，
@@ -210,7 +210,7 @@ public struct WowtypeConfig: Equatable {
     }
 
     /// 解析 fcitx5 的 INI 格式：一行一个 Key=Value，# 开头是注释，值可以带双引号。
-    /// 只认最外层的键（[分组] 下面的不是 WowType 的设置）。同一个键写了几次，算最后一次。
+    /// 只认最外层的键（[分组] 下面的不是 MyType 的设置）。同一个键写了几次，算最后一次。
     public static func parse(_ text: String) -> WowtypeConfig {
         var config = WowtypeConfig()
         var inGroup = false
@@ -477,7 +477,7 @@ public struct WowtypeConfig: Equatable {
         let d = WowtypeConfig()
         func b(_ v: Bool) -> String { v ? "True" : "False" }
         return """
-        # WowType 设置（键名和 Linux 的 wowtype.conf 一样，见 docs/CONFIG.md）。
+        # MyType 设置（键名和 Linux 的 wowtype.conf 一样，见 docs/CONFIG.md）。
         # 改完保存，下一次按键时生效；删掉一行就是用默认值。注释要单独写一行。
 
         # 候选排列：Horizontal 横排、Vertical 竖排
@@ -566,7 +566,7 @@ public struct WowtypeConfig: Equatable {
         # Command 组合键多半到不了输入法，写 Super 的当 Control
         EmojiKey=\(d.emojiKey?.name ?? "")
         # 另设一个切换中 / 英文的快捷键，比如 Control+Shift+space；留空不用（单按 Shift 照常）。
-        # 系统的快捷键（Control+space 选上一个输入法）先被系统拿走，WowType 收不到
+        # 系统的快捷键（Control+space 选上一个输入法）先被系统拿走，MyType 收不到
         ToggleKey=\(d.toggleKey?.name ?? "")
         # 进出「译」的快捷键，比如 Control+Shift+Y；留空不用。设了以后单按 Shift 只在中英之间切
         TranslateModeKey=\(d.translateModeKey?.name ?? "")

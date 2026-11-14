@@ -461,7 +461,7 @@ final class SettingsModel: ObservableObject {
         guard let server = LocalModelInstaller.findServer(custom: config.translateLlamaServer, supportDir: supportDir)
         else { return nil }
         if server == LocalModelInstaller.downloadedServer(in: supportDir) {
-            return "WowType 下载的 llama.cpp \(LocalModelInstaller.downloadedBuild(in: supportDir) ?? "")"
+            return "MyType 下载的 llama.cpp \(LocalModelInstaller.downloadedBuild(in: supportDir) ?? "")"
         }
         return (server as NSString).abbreviatingWithTildeInPath
     }
@@ -668,7 +668,7 @@ final class SettingsModel: ObservableObject {
     func importWords() {
         let panel = NSOpenPanel()
         panel.title = "导入自定义词"
-        panel.message = "每行：编码<TAB>词（WowType 导出的文件、Linux 上的 custom.tsv 都行）"
+        panel.message = "每行：编码<TAB>词（MyType 导出的文件、Linux 上的 custom.tsv 都行）"
         panel.prompt = "导入"
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false

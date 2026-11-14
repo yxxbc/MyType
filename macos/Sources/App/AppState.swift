@@ -52,14 +52,14 @@ final class AppState {
         Bundle.main.resourceURL ?? Bundle.main.bundleURL.appendingPathComponent("Contents/Resources")
     }
 
-    /// 用户数据：~/Library/Application Support/WowType（测试时可用 WOWTYPE_DATA_DIR 换个地方）
+    /// 用户数据：~/Library/Application Support/MyType（测试时可用 WOWTYPE_DATA_DIR 换个地方）
     var supportDir: URL {
         if let dir = ProcessInfo.processInfo.environment["WOWTYPE_DATA_DIR"], !dir.isEmpty {
             return URL(fileURLWithPath: dir, isDirectory: true)
         }
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
-        return base.appendingPathComponent("WowType", isDirectory: true)
+        return base.appendingPathComponent("MyType", isDirectory: true)
     }
 
     var userDictPath: String { supportDir.appendingPathComponent("user.tsv").path }
@@ -109,7 +109,7 @@ final class AppState {
             }
             if missingLexiconLogged != path {
                 missingLexiconLogged = path
-                NSLog("WowType: 设置里的词库 %@ 不在，用自带的词库", path)
+                NSLog("MyType: 设置里的词库 %@ 不在，用自带的词库", path)
             }
         }
         return bundledLexiconPath()
@@ -146,7 +146,7 @@ final class AppState {
             config = loaded
             configGeneration += 1
             applyTranslateSettings()
-            NSLog("WowType: 设置 %@ 每页%d 模糊音=%d(%u) 纠错=%d 双拼=%d(%@) 五笔=%d Shift切换=%@ 繁体=%d 半角标点=%d 字号=%d 词库=%@ 工具栏=%d 剪贴板历史=%d 表情键=%@ 互译=%@",
+            NSLog("MyType: 设置 %@ 每页%d 模糊音=%d(%u) 纠错=%d 双拼=%d(%@) 五笔=%d Shift切换=%@ 繁体=%d 半角标点=%d 字号=%d 词库=%@ 工具栏=%d 剪贴板历史=%d 表情键=%@ 互译=%@",
                   config.horizontal ? "横排" : "竖排", config.pageSize, config.fuzzy ? 1 : 0, config.fuzzyGroups,
                   config.typoCorrection ? 1 : 0, config.shuangpin ? 1 : 0, config.shuangpinScheme, config.wubi ? 1 : 0,
                   config.shiftToggle.rawValue, config.traditional ? 1 : 0, config.halfwidthPunct ? 1 : 0,
@@ -193,14 +193,14 @@ final class AppState {
     /// 设置里管引擎的部分 + 自定义词。
     private func applyEngineSettings(_ engine: Engine) {
         for problem in engine.apply(config, conversion: resource("s2t.tsv"), wubi: resource("wubi86.tsv")) {
-            NSLog("WowType: %@", problem)
+            NSLog("MyType: %@", problem)
         }
         customStamp = FileStamp(customWordsPath)
         let custom = engine.loadCustomWords(customWordsPath)
         if custom < 0 {
-            NSLog("WowType: 自定义词载入失败 %@", customWordsPath)
+            NSLog("MyType: 自定义词载入失败 %@", customWordsPath)
         } else if custom > 0 {
-            NSLog("WowType: 载入自定义词 %d 条", custom)
+            NSLog("MyType: 载入自定义词 %d 条", custom)
         }
     }
 
@@ -210,7 +210,7 @@ final class AppState {
         guard let engine = Engine(lexicon: lexicon, languageModel: resource("words.lm"))
             ?? Engine(lexicon: lexicon)
         else {
-            NSLog("WowType: 载入词库失败 %@", lexicon)
+            NSLog("MyType: 载入词库失败 %@", lexicon)
             return nil
         }
         if let english = resource("english.txt") {
@@ -220,9 +220,9 @@ final class AppState {
         let domain = supportDir.appendingPathComponent("words.domain.lm").path
         if FileManager.default.fileExists(atPath: domain) {
             if engine.setDomainLM(domain) {
-                NSLog("WowType: 载入领域词级模型 %@", domain)
+                NSLog("MyType: 载入领域词级模型 %@", domain)
             } else {
-                NSLog("WowType: 领域词级模型载入失败 %@", domain)
+                NSLog("MyType: 领域词级模型载入失败 %@", domain)
             }
         }
         engine.loadUserDict(userDictPath)
@@ -234,7 +234,7 @@ final class AppState {
     func makeConfiguredEngine() -> Engine? {
         loadConfig()
         guard let lexicon = lexiconPath() else {
-            NSLog("WowType: 安装包里没有 lexicon.tsv")
+            NSLog("MyType: 安装包里没有 lexicon.tsv")
             return nil
         }
         guard let engine = makeEngine(lexicon: lexicon) else { return nil }
@@ -252,7 +252,7 @@ final class AppState {
             return
         }
         guard let lexicon = lexiconPath() else {
-            NSLog("WowType: 安装包里没有 lexicon.tsv")
+            NSLog("MyType: 安装包里没有 lexicon.tsv")
             return
         }
         // 换词库：新引擎要读学习数据，先把旧引擎学到的存下来（载入途中学的就丢了，最多几秒）
@@ -264,7 +264,7 @@ final class AppState {
             let engine = self.makeEngine(lexicon: lexicon)
             DispatchQueue.main.async {
                 self.loading = false
-                NSLog("WowType: 词库 %@ 载入%@，用时 %.1f 秒", lexicon, engine == nil ? "失败" : "完成",
+                NSLog("MyType: 词库 %@ 载入%@，用时 %.1f 秒", lexicon, engine == nil ? "失败" : "完成",
                       Date().timeIntervalSince(start))
                 if let engine {
                     self.applyEngineSettings(engine)
@@ -307,14 +307,14 @@ final class AppState {
             loadConfig()
             if configGeneration != generation, let engine {
                 for problem in engine.apply(config, conversion: resource("s2t.tsv"), wubi: resource("wubi86.tsv")) {
-                    NSLog("WowType: %@", problem)
+                    NSLog("MyType: %@", problem)
                 }
             }
         }
         if let engine, FileStamp(customWordsPath) != customStamp {
             customStamp = FileStamp(customWordsPath)
             let custom = engine.loadCustomWords(customWordsPath)
-            NSLog("WowType: 自定义词改了，重新载入 %d 条", custom)
+            NSLog("MyType: 自定义词改了，重新载入 %d 条", custom)
         }
         guard engine != nil || loading else { return }
         let wanted = lexiconPath()
@@ -322,7 +322,7 @@ final class AppState {
             if loading {
                 reloadAfterLoading = true
             } else if engine != nil {
-                NSLog("WowType: 换词库 %@ -> %@", lexiconInUse ?? "", wanted)
+                NSLog("MyType: 换词库 %@ -> %@", lexiconInUse ?? "", wanted)
                 loadEngineInBackground()
             }
         }
@@ -405,11 +405,11 @@ final class AppState {
         try? FileManager.default.createDirectory(at: supportDir, withIntermediateDirectories: true)
         let dictSaved = engine.saveUserDict(userDictPath)
         if !dictSaved {
-            NSLog("WowType: 保存用户词库失败")
+            NSLog("MyType: 保存用户词库失败")
         }
         let historySaved = engine.saveHistory(historyPath)
         if !historySaved {
-            NSLog("WowType: 保存输入习惯失败")
+            NSLog("MyType: 保存输入习惯失败")
         }
         // 两样都存上了才清零：存失败的那批下次接着存（和 Linux 一样）
         if dictSaved && historySaved {

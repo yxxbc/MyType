@@ -1,4 +1,4 @@
-// 候选框：一个不抢焦点的小窗口，照 WowType 主题自己画。颜色、圆角、边距和 Linux 上的
+// 候选框：一个不抢焦点的小窗口，照 MyType 主题自己画。颜色、圆角、边距和 Linux 上的
 // themes/fcitx5/wowtype、wowtype-dark 一样，系统换深色模式时跟着换：圆角白底（深色是深灰底），
 // 当前候选绿底白字，序号灰色，最右边是绿色的翻页箭头（翻不动的那边变淡）。
 // 横排一行「1 是  2 十 …」，竖排（设置里 CandidateLayout=Vertical、v + 空格的工具栏）一行一个。
@@ -8,7 +8,7 @@
 
 import AppKit
 
-/// WowType 主题的颜色，取自 themes/fcitx5/wowtype*/theme.conf 和 themes/src/*.svg。
+/// MyType 主题的颜色，取自 themes/fcitx5/wowtype*/theme.conf 和 themes/src/*.svg。
 struct CandidateTheme {
     var background: NSColor
     var border: NSColor

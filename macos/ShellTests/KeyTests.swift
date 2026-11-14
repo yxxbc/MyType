@@ -78,7 +78,7 @@ func runKeyTests() {
         let (c, f) = session()
         tapShift(c)
         check(panel?.aux == "英" && texts.isEmpty, "切到英文：光标下面提示「英」", "\(String(describing: panel?.aux))")
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: WowTypeInputController.modeHintDuration + 0.2))
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: MyTypeInputController.modeHintDuration + 0.2))
         check(panel == nil, "提示过一会儿收起")
         type(c, "abc")
         check(f.text == "abc" && f.inserted.isEmpty, "英文模式字母交给应用", "\(f.text) \(f.inserted)")

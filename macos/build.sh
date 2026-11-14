@@ -5,7 +5,7 @@
 #
 # 数据目录是 scripts/make-data.sh 的输出（lexicon.tsv、english.txt、words.lm、LICENSE、SOURCE.txt、VERSION），
 # 加上 scripts/make-wubi.sh 的输出（wubi86.tsv、WUBI-LICENSE、WUBI-AUTHORS、WUBI-SOURCE.txt）。
-# 产物：<输出目录>/WowType.app、WowType-<版本>-macos.pkg（给普通用户双击安装）和 WowType-<版本>-macos.zip
+# 产物：<输出目录>/MyType.app、MyType-<版本>-macos.pkg（给普通用户双击安装）和 MyType-<版本>-macos.zip
 # （给 macos/install.sh 用）。arm64 + x86_64 通用，ad-hoc 签名，没有 Apple 开发者签名和公证。
 #
 # 环境变量：WOWTYPE_VERSION（默认取 core/Cargo.toml），WOWTYPE_MACOS_ARCHS（默认 "arm64 x86_64"）。
@@ -35,32 +35,32 @@ for arch in $ARCHS; do
     *) echo "不认识的架构 $arch" >&2; exit 1 ;;
   esac
   cargo build --release --locked -q -p wowtype-core --target "$rust" --target-dir "$TARGET_DIR"
-  swiftc -O -target "$arch-apple-macos$MACOSX_DEPLOYMENT_TARGET" -module-name WowType -I macos/CWowtype \
+  swiftc -O -target "$arch-apple-macos$MACOSX_DEPLOYMENT_TARGET" -module-name MyType -I macos/CWowtype \
     macos/Sources/Shared/*.swift macos/Sources/App/*.swift \
     "$TARGET_DIR/$rust/release/libwowtype_core.a" \
     -framework Cocoa -framework InputMethodKit -framework Carbon \
     -framework AVFoundation -framework AudioUnit -framework CoreAudio \
-    -liconv -o "$work/WowType-$arch"
-  bins+=("$work/WowType-$arch")
+    -liconv -o "$work/MyType-$arch"
+  bins+=("$work/MyType-$arch")
 done
 
-app="$OUT/WowType.app"
+app="$OUT/MyType.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-lipo -create "${bins[@]}" -output "$app/Contents/MacOS/WowType"
+lipo -create "${bins[@]}" -output "$app/Contents/MacOS/MyType"
 sed "s/@VERSION@/$VERSION/g" macos/Resources/Info.plist > "$app/Contents/Info.plist"
 plutil -lint "$app/Contents/Info.plist"
 printf 'APPL????' > "$app/Contents/PkgInfo"
 
 res="$app/Contents/Resources"
-# 图标是单色模板图（黑色 + 透明的矢量 PDF，icons/macos/make-icons.swift 生成）：系统按菜单栏深浅色上色。
+# 图标是单色模板图（黑色 + 透明的矢量 PDF，icons/mytype/make-icons.swift 生成）：系统按菜单栏深浅色上色。
 # menu.pdf 16pt，菜单栏和输入法菜单用；caret@2x.pdf 是切换输入法时光标旁提示气泡里的字形。
-cp icons/macos/menu.pdf icons/macos/caret@2x.pdf "$res/"
-# 应用图标：设置窗口（WowType --settings）在程序坞、关于窗口里用。没有 512 的 PNG，最大到 256（128pt@2x）
+cp icons/mytype/menu.pdf icons/mytype/caret@2x.pdf "$res/"
+# 应用图标：设置窗口（MyType --settings）在程序坞、关于窗口里用。源图 1024×1024，缩成 iconset 再打 icns
 iconset="$work/AppIcon.iconset"
 mkdir -p "$iconset"
-for spec in 16:16x16 32:16x16@2x 32:32x32 64:32x32@2x 128:128x128 256:128x128@2x 256:256x256; do
-  cp "icons/hicolor/${spec%%:*}x${spec%%:*}/apps/wowtype.png" "$iconset/icon_${spec#*:}.png"
+for spec in 16:16x16 32:16x16@2x 32:32x32 64:32x32@2x 128:128x128 256:128x128@2x 256:256x256 512:256x256@2x 512:512x512 1024:512x512@2x; do
+  sips -z "${spec%%:*}" "${spec%%:*}" icons/mytype/app-1024.png --out "$iconset/icon_${spec#*:}.png" >/dev/null
 done
 iconutil -c icns "$iconset" -o "$res/AppIcon.icns"
 for lproj in macos/Resources/*.lproj; do
@@ -97,28 +97,28 @@ xattr -cr "$app"
 codesign --force --sign - --timestamp=none "$app"
 codesign --verify --strict --verbose=1 "$app"
 mkdir -p "$OUT"
-zip="$OUT/WowType-$VERSION-macos.zip"
+zip="$OUT/MyType-$VERSION-macos.zip"
 rm -f "$zip"
 ditto -c -k --keepParent "$app" "$zip"
 echo "$zip"
 
 # 双击安装的 pkg：只装给当前用户（~/Library/Input Methods，不要管理员密码，和 install.sh 装的是同一个位置），
-# 装完 postinstall 自动登记、打开、切到 WowType。
+# 装完 postinstall 自动登记、打开、切到 MyType。
 # 没有开发者签名：从网上下载的 pkg 第一次打开时要到「系统设置 → 隐私与安全性」点「仍要打开」。
 # 安装器装出来的文件不带隔离标记，输入法装好就能跑；zip 解出来的要去掉隔离标记（install.sh 做了）。
 pkgroot="$work/pkgroot"
 mkdir -p "$pkgroot"
-ditto "$app" "$pkgroot/WowType.app"
+ditto "$app" "$pkgroot/MyType.app"
 pkgbuild --analyze --root "$pkgroot" "$work/component.plist" >/dev/null
-# 不许「搬家」：机器上别处（比如构建目录）有同 ID 的 WowType.app 时，安装器会去升级那个，装不到输入法目录
+# 不许「搬家」：机器上别处（比如构建目录）有同 ID 的 MyType.app 时，安装器会去升级那个，装不到输入法目录
 plutil -replace 0.BundleIsRelocatable -bool NO "$work/component.plist"
 plutil -replace 0.BundleIsVersionChecked -bool NO "$work/component.plist"
 pkgbuild --quiet --root "$pkgroot" --component-plist "$work/component.plist" \
-  --identifier io.github.gloridust.inputmethod.WowType.pkg --version "$VERSION" \
+  --identifier io.github.yxxbc.inputmethod.MyType.pkg --version "$VERSION" \
   --install-location "/Library/Input Methods" --scripts macos/pkg/scripts \
-  "$work/WowType-component.pkg"
+  "$work/MyType-component.pkg"
 sed "s/@VERSION@/$VERSION/g" macos/pkg/distribution.xml > "$work/distribution.xml"
-pkg="$OUT/WowType-$VERSION-macos.pkg"
+pkg="$OUT/MyType-$VERSION-macos.pkg"
 rm -f "$pkg"
 productbuild --quiet --distribution "$work/distribution.xml" --package-path "$work" \
   --resources macos/pkg/resources "$pkg"
