@@ -3,7 +3,7 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/yxxbc/WowType/main/install.sh | bash
 #
-# macOS：下载 WowType-<版本>-macos.pkg，按 SHA256SUMS 校验，用系统的 installer 只装给当前用户
+# macOS：下载 MyType-<版本>-macos.pkg，按 SHA256SUMS 校验，用系统的 installer 只装给当前用户
 # （~/Library/Input Methods，不要密码），装完自动加进输入法并切过去。下面的 1–4 是 Linux 的步骤。
 #
 # 做这几件事：
@@ -65,7 +65,7 @@ usage() {
   cat <<'EOF'
 用法：bash install.sh [--print-plan | --help]
 
-默认下载、校验并安装匹配当前发行版的 WowType 包。
+默认下载、校验并安装匹配当前发行版的安装包（macOS：MyType 的 pkg）。
 --print-plan  只显示发行版、包管理器和包名，不联网、不安装、不更改配置。
 
 支持 Ubuntu 22.04 / 24.04 / 26.04、Debian 13 及有明确兼容基线的衍生版，deepin 23 / 25，
@@ -119,7 +119,7 @@ macos_install() { # <只打印计划：0 / 1>
   esac
   if [[ "$1" == 1 ]]; then
     local requested=${WOWTYPE_VERSION:-<版本>}
-    printf '系统：macOS %s\n仓库：%s\n包文件：WowType-%s-macos.pkg\n' "$machine" "$REPO" "${requested#v}"
+    printf '系统：macOS %s\n仓库：%s\n包文件：MyType-%s-macos.pkg\n' "$machine" "$REPO" "${requested#v}"
     return
   fi
   [[ $EUID -ne 0 ]] || die "请直接用普通用户运行，不要加 sudo（WowType 只装给当前用户）"
@@ -130,15 +130,15 @@ macos_install() { # <只打印计划：0 / 1>
   version=${tag#v}
   [[ "$version" =~ ^[a-zA-Z0-9][a-zA-Z0-9._+~^-]*$ ]] || die "无效的版本号：$version"
   base=${WOWTYPE_BASE_URL:-"https://github.com/$REPO/releases/download/$tag"}
-  package="WowType-$version-macos.pkg"
+  package="MyType-$version-macos.pkg"
   tmp=$(mktemp -d)
   trap 'rm -rf "${tmp:-}"' EXIT
 
-  say "WowType ${version}（macOS）"
+  say "MyType ${version}（macOS）"
   fetch "$base/SHA256SUMS" "$tmp/SHA256SUMS" 2>/dev/null ||
     die "下载 $base/SHA256SUMS 失败，请检查版本和网络；发布页：https://github.com/$REPO/releases"
   expected=$(manifest_hash "$package" "$tmp/SHA256SUMS") ||
-    die "WowType $version 没有 macOS 安装包（${package}）；发布页：https://github.com/$REPO/releases"
+    die "MyType $version 没有 macOS 安装包（${package}）；发布页：https://github.com/$REPO/releases"
   say "下载并校验 $package"
   fetch "$base/$package" "$tmp/$package"
   actual=$(shasum -a 256 "$tmp/$package")
@@ -146,8 +146,10 @@ macos_install() { # <只打印计划：0 / 1>
 
   say "安装到 ~/Library/Input Methods（只装给当前用户）"
   installer -pkg "$tmp/$package" -target CurrentUserHomeDirectory
-  say "装好了。菜单栏的输入法里选 WowType 就能用。"
-  echo "菜单栏里没有的话：系统设置 → 键盘 → 输入法 → 编辑 → +，在「简体中文」里添加 WowType；还没有就注销重新登录一次。"
+  say "装好了，已经登记并打开 MyType。"
+  echo "菜单栏的输入法里选 MyType 就能用。"
+  echo "没看到的话：系统设置 → 键盘 → 文字输入 → 输入法 → 编辑 → ＋ → 简体中文 → MyType；"
+  echo "还没有就注销重新登录一次。"
 }
 
 select_platform() {
