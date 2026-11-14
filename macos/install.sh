@@ -39,14 +39,22 @@ xattr -dr com.apple.quarantine "$dest" 2>/dev/null || true
 
 bin="$dest/Contents/MacOS/MyType"
 "$bin" --register
-# 菜单栏的输入法菜单会缓存图标，升级换了图标时重启一下它才会刷新（系统会马上把它拉起来）
+# 菜单栏的输入法菜单会缓存列表和图标：重启它才会重新读一遍（系统会马上把它拉起来）
 killall TextInputMenuAgent 2>/dev/null || true
-# 刚登记完系统可能还没列出来，等一下再打开
-for _ in 1 2 3 4 5; do
+# 刚登记完系统可能还没列出来，等一下再打开；打开以后菜单栏那边可能还是旧的，再刷一次
+for _ in 1 2 3 4 5 6 7 8; do
   if "$bin" --enable >/dev/null 2>&1; then
     "$bin" --enable
-    "$bin" --select || true
-    echo "装好了。菜单栏的输入法里选 MyType 就能用。"
+    sleep 1
+    killall TextInputMenuAgent 2>/dev/null || true
+    if "$bin" --select >/dev/null 2>&1; then
+      "$bin" --select
+      echo "装好了，已经切到 MyType。"
+    else
+      echo "装好了。菜单栏的输入法菜单里选 MyType 就能用。"
+      echo "  没看到的话：系统设置 → 键盘 → 文字输入 → 输入法 → 编辑 → ＋ → 简体中文 → MyType"
+      echo "  还是没有就注销重新登录一次。"
+    fi
     exit 0
   fi
   sleep 1

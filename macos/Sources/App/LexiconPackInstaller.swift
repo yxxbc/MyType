@@ -8,7 +8,7 @@ import CryptoKit
 import Foundation
 
 enum LexiconPackInstaller {
-    static let releaseAPI = URL(string: "https://api.github.com/repos/Gloridust/MyType/releases/latest")!
+    static let releaseAPI = URL(string: "https://api.github.com/repos/yxxbc/WowType/releases/latest")!
 
     struct Release {
         let tag: String

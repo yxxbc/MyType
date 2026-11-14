@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # WowType 一键安装：Ubuntu / Debian、Fedora（x86_64、arm64），Arch Linux、deepin（x86_64），macOS 12 以上。
 #
-#   curl -fsSL https://raw.githubusercontent.com/Gloridust/WowType/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/yxxbc/WowType/main/install.sh | bash
 #
 # macOS：下载 WowType-<版本>-macos.pkg，按 SHA256SUMS 校验，用系统的 installer 只装给当前用户
 # （~/Library/Input Methods，不要密码），装完自动加进输入法并切过去。下面的 1–4 是 Linux 的步骤。
@@ -16,13 +16,13 @@
 #
 # 环境变量：
 #   WOWTYPE_VERSION=v0.3.8   装指定版本（默认最新）
-#   WOWTYPE_REPO=owner/repo  指定发布仓库（默认 Gloridust/WowType）
+#   WOWTYPE_REPO=owner/repo  指定发布仓库（默认 yxxbc/WowType）
 #   WOWTYPE_NO_IM_CONFIG=1   不改输入法框架
 #   WOWTYPE_NO_RESTART=1     不重启 fcitx5（之后自己重启或注销再登录，再到设置里添加 WowType）
 #   WOWTYPE_YES=1            不问，直接按默认做
 set -euo pipefail
 
-REPO=${WOWTYPE_REPO:-Gloridust/WowType}
+REPO=${WOWTYPE_REPO:-yxxbc/WowType}
 
 say() { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m注意：\033[0m%s\n' "$*" >&2; }
