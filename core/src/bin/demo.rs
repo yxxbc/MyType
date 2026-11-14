@@ -13,7 +13,7 @@ use std::process;
 use std::sync::Arc;
 
 use wowtype_core::lm::{ArpaLm, BigramLm, LanguageModel};
-use wowtype_core::{Engine, Lexicon, MemoryLexicon};
+use wowtype_core::{open_cached, Engine, Lexicon};
 
 fn usage(program: &str) {
     println!("用法: {program} [选项] [拼音...]");
@@ -137,7 +137,7 @@ fn main() {
         i += 1;
     }
 
-    let lexicon = match MemoryLexicon::from_tsv_path_cached(&lexicon_path) {
+    let lexicon = match open_cached(&lexicon_path) {
         Ok(lexicon) => lexicon,
         Err(error) => fail(&format!("{error:#}")),
     };
@@ -155,7 +155,7 @@ fn main() {
             None => Arc::new(BigramLm::default()),
         }
     };
-    let lexicon: Arc<dyn Lexicon> = Arc::new(lexicon);
+    let lexicon: Arc<dyn Lexicon> = lexicon;
     let mut engine = Engine::new(lexicon, lm);
     if let Some(beam) = beam {
         engine.set_beam_size(beam);

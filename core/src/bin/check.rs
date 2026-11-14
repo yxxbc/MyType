@@ -11,7 +11,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use wowtype_core::lm::{ArpaLm, BigramLm, LanguageModel};
-use wowtype_core::{symbols, Engine, Lexicon, MemoryLexicon};
+use wowtype_core::{Engine, Lexicon, MemoryLexicon, open_cached, symbols};
 
 struct Report {
     ok: usize,
@@ -95,7 +95,7 @@ fn main() {
         report.fail("词库", "文件不存在；先跑 tools/rime2tsv.py 生成");
         Arc::new(MemoryLexicon::new())
     } else {
-        match MemoryLexicon::from_tsv_path_cached(&lexicon) {
+        match open_cached(&lexicon) {
             Ok(v) => {
                 lexicon_len = v.len();
                 if v.len() == 0 {
@@ -111,7 +111,7 @@ fn main() {
                         ),
                     );
                 }
-                Arc::new(v)
+                v
             }
             Err(e) => {
                 report.fail("词库", &format!("解析失败: {e:#}"));

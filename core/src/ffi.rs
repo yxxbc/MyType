@@ -12,7 +12,7 @@ use std::panic;
 use std::ptr;
 use std::sync::Arc;
 
-use crate::lexicon::{Lexicon, MemoryLexicon};
+use crate::lexicon::Lexicon;
 use crate::lm::{BigramLm, LanguageModel};
 use crate::Engine;
 
@@ -84,8 +84,7 @@ pub unsafe extern "C" fn wowtype_engine_new(
     };
 
     let result = (|| -> anyhow::Result<Engine> {
-        let lexicon = MemoryLexicon::from_tsv_path_cached(lexicon_path)?;
-        let lexicon: Arc<dyn Lexicon> = Arc::new(lexicon);
+        let lexicon: Arc<dyn Lexicon> = crate::lexicon::open_cached(lexicon_path)?;
         let lm: Arc<dyn LanguageModel> = match unsafe { cstr_to_str(bigram_tsv_path) } {
             Some(path) if !path.is_empty() => crate::lm::load_lm(path)?,
             _ => Arc::new(BigramLm::default()),

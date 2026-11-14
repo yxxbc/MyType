@@ -17,7 +17,7 @@ use std::time::Instant;
 
 use wowtype_core::lm::BigramLm;
 use wowtype_core::session::{Config, Key, Session};
-use wowtype_core::{Engine, EngineConfig, Lexicon, MemoryLexicon, SYLLABLES};
+use wowtype_core::{Engine, EngineConfig, Lexicon, MemoryLexicon, SYLLABLES, open_cached};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -91,7 +91,7 @@ fn main() {
     let t0 = Instant::now();
     let (lexicon, label) = match &lexicon_path {
         Some(path) => {
-            let lex = MemoryLexicon::from_tsv_path_cached(path).expect("载入词库失败");
+            let lex = open_cached(path).expect("载入词库失败");
             (lex, path.clone())
         }
         None => {
@@ -111,7 +111,8 @@ fn main() {
                 tsv.push('\n');
             }
             (
-                MemoryLexicon::from_tsv_str(&tsv).expect("构造词库失败"),
+                Arc::new(MemoryLexicon::from_tsv_str(&tsv).expect("构造词库失败"))
+                    as Arc<dyn Lexicon>,
                 format!("合成 {total} 条"),
             )
         }
@@ -133,7 +134,7 @@ fn main() {
         }
         None => Arc::new(BigramLm::default()),
     };
-    let lex: Arc<dyn Lexicon> = Arc::new(lexicon);
+    let lex: Arc<dyn Lexicon> = lexicon;
     let mut config = EngineConfig::default();
     if let Some(max) = max_candidates {
         config.max_candidates = max;

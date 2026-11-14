@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use wowtype_core::lm::{ArpaLm, BigramLm, LanguageModel, MixedLm};
 use wowtype_core::rank::{FeatureWeights, LinearRanker};
-use wowtype_core::{Engine, EngineConfig, Lexicon, MemoryLexicon};
+use wowtype_core::{open_cached, Engine, EngineConfig, Lexicon};
 
 fn fail(msg: &str) -> ! {
     eprintln!("{msg}");
@@ -158,7 +158,7 @@ fn main() {
         fail("需要 --lexicon 与 --eval");
     }
 
-    let lexicon = match MemoryLexicon::from_tsv_path_cached(&lexicon_path) {
+    let lexicon = match open_cached(&lexicon_path) {
         Ok(v) => v,
         Err(e) => fail(&format!("{e:#}")),
     };
@@ -184,7 +184,7 @@ fn main() {
         }
         None => lm,
     };
-    let lex: Arc<dyn Lexicon> = Arc::new(lexicon);
+    let lex: Arc<dyn Lexicon> = lexicon;
     let ranker = Arc::new(LinearRanker::new(weights));
     let mut config = EngineConfig {
         max_candidates,

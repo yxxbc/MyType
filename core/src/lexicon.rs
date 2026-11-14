@@ -19,9 +19,8 @@ use anyhow::{anyhow, bail, Context, Result};
 
 use crate::syllable::{Syllable, SyllableId, SyllableQuery};
 
-/// 词库快照的魔数与格式版本。格式一变就改版本号，旧快照自动失效。
-const CACHE_MAGIC: &[u8; 4] = b"WLC1";
-const CACHE_VERSION: u32 = 2;
+/// 词库快照的格式版本。格式一变就改版本号，旧快照自动失效。
+const CACHE_VERSION: u32 = 3;
 
 /// 快照里存的是音节 ID（音节表的下标），音节表一改（比如补了 biang）旧快照就对不上了。
 /// 所以写进快照的版本号混进音节表的指纹：表一变，旧快照自动作废重建。
@@ -189,6 +188,11 @@ pub trait Lexicon: Send + Sync {
     fn total_freq(&self) -> f64;
 
     fn len(&self) -> usize;
+
+    /// 载入时被跳过的行数（未知音节等）。从快照读出来的词库没有这份统计，给 0。
+    fn skipped(&self) -> usize {
+        0
+    }
 
     fn is_empty(&self) -> bool {
         self.len() == 0
@@ -603,107 +607,72 @@ impl MemoryLexicon {
         Ok(lex)
     }
 
-    /// 从 TSV 加载，并在旁边维护一份二进制快照。
-    ///
-    /// 55 万词库的 TSV 解析要 1.3 秒，快照能把这部分省掉。快照按
-    /// 「源文件大小 + mtime + 格式版本」校验，词库更新后自动重建。
-    pub fn from_tsv_path_cached<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let path = path.as_ref();
-        let Some((len, mtime)) = source_stamp(path) else {
-            return Self::from_tsv_path(path);
-        };
-        let candidates = cache_paths(path);
-        for cache in &candidates {
-            if let Ok(data) = fs::read(cache) {
-                if let Some(lex) = Self::read_cache(&data, len, mtime) {
-                    return Ok(lex);
-                }
+    /// 把内存里的词库写成快照（v3）。索引顺序、生僻字顺序都照原样，读的时候直接二分。
+    fn snapshot_bytes(&self, src_len: u64, src_mtime: u64) -> Vec<u8> {
+        let count = self.len();
+        let mut offsets: Vec<u32> = Vec::with_capacity(count + 1);
+        let mut records: Vec<u8> = Vec::with_capacity(count * 34);
+        for entry in 0..count {
+            offsets.push(records.len() as u32);
+            let word = self.word(entry).as_bytes();
+            records.extend_from_slice(&(word.len() as u16).to_le_bytes());
+            records.extend_from_slice(word);
+            records.extend_from_slice(&self.freqs[entry].to_le_bytes());
+            let span = self.key_spans[entry];
+            records.push(span.len as u8);
+            for raw in &self.keys[span.off as usize..(span.off + span.len) as usize] {
+                records.extend_from_slice(&raw.to_le_bytes());
             }
         }
-        let lex = Self::from_tsv_path(path)?;
-        // 写失败不算错误：只读目录会退到 XDG 缓存目录，那里也不行就算了
-        for cache in &candidates {
-            if lex.write_cache(cache, len, mtime).is_ok() {
-                break;
-            }
-        }
-        Ok(lex)
-    }
+        offsets.push(records.len() as u32);
 
-    fn write_cache(&self, cache: &Path, src_len: u64, src_mtime: u64) -> Result<()> {
-        let mut buf: Vec<u8> = Vec::with_capacity(self.len() * 24);
-        buf.extend_from_slice(CACHE_MAGIC);
+        let offsets_at = FILE_HEADER;
+        let records_at = offsets_at + offsets.len() * 4;
+        let full_at = records_at + records.len();
+        let jianpin_at = full_at + self.full.len() * 12;
+        let full_prefix_at = jianpin_at + self.jianpin.len() * 12;
+        let initial_prefix_at = full_prefix_at + self.full_prefixes.len() * 8;
+        let data_len = initial_prefix_at + self.initial_prefixes.len() * 8;
+
+        let mut buf: Vec<u8> = Vec::with_capacity(data_len);
+        buf.extend_from_slice(FILE_MAGIC);
         buf.extend_from_slice(&cache_version().to_le_bytes());
         buf.extend_from_slice(&src_len.to_le_bytes());
         buf.extend_from_slice(&src_mtime.to_le_bytes());
-        buf.extend_from_slice(&(self.len() as u32).to_le_bytes());
-        // 词频是估过的（见 `estimate_placeholder_freqs`），总频次单独存，别从估值里加
+        buf.extend_from_slice(&(count as u32).to_le_bytes());
+        buf.extend_from_slice(&(self.jianpin.len() as u32).to_le_bytes());
         buf.extend_from_slice(&self.total_freq.to_le_bytes());
-        for entry in 0..self.len() {
-            let word = self.word(entry).as_bytes();
-            buf.extend_from_slice(&(word.len() as u16).to_le_bytes());
-            buf.extend_from_slice(word);
-            buf.extend_from_slice(&self.freqs[entry].to_le_bytes());
-            let keys: Vec<SyllableKey> = self.keys_at(entry).collect();
-            buf.push(keys.len() as u8);
-            for key in &keys {
-                buf.extend_from_slice(&raw_key(*key).to_le_bytes());
-            }
-            buf.push(keys.len() as u8);
-            for key in &keys {
-                let letter = Syllable::from_id(key.id)
-                    .map_or(0, |syllable| syllable.initial_letter());
-                buf.push(letter);
-            }
-        }
-        if let Some(parent) = cache.parent() {
-            fs::create_dir_all(parent).ok();
-        }
-        crate::fsutil::write_atomic(cache, &buf)
-            .with_context(|| format!("写词库快照失败: {}", cache.display()))
-    }
+        buf.extend_from_slice(&(offsets_at as u32).to_le_bytes());
+        buf.extend_from_slice(&(records_at as u32).to_le_bytes());
+        buf.extend_from_slice(&(full_at as u32).to_le_bytes());
+        buf.extend_from_slice(&(jianpin_at as u32).to_le_bytes());
+        buf.extend_from_slice(&(full_prefix_at as u32).to_le_bytes());
+        buf.extend_from_slice(&(initial_prefix_at as u32).to_le_bytes());
+        buf.extend_from_slice(&(self.full_prefixes.len() as u32).to_le_bytes());
+        buf.extend_from_slice(&(self.initial_prefixes.len() as u32).to_le_bytes());
+        buf.extend_from_slice(&(data_len as u32).to_le_bytes());
+        debug_assert_eq!(buf.len(), FILE_HEADER);
 
-    fn read_cache(data: &[u8], src_len: u64, src_mtime: u64) -> Option<MemoryLexicon> {
-        if data.len() < 24 || &data[0..4] != CACHE_MAGIC {
-            return None;
+        for offset in &offsets {
+            buf.extend_from_slice(&offset.to_le_bytes());
         }
-        let version = u32::from_le_bytes(data[4..8].try_into().ok()?);
-        if version != cache_version() {
-            return None;
+        buf.extend_from_slice(&records);
+        for n in 0..self.full.len() {
+            buf.extend_from_slice(&self.full.hashes[n].to_le_bytes());
+            buf.extend_from_slice(&self.full.entries[n].to_le_bytes());
         }
-        if u64::from_le_bytes(data[8..16].try_into().ok()?) != src_len
-            || u64::from_le_bytes(data[16..24].try_into().ok()?) != src_mtime
-        {
-            return None;
+        for n in 0..self.jianpin.len() {
+            buf.extend_from_slice(&self.jianpin.hashes[n].to_le_bytes());
+            buf.extend_from_slice(&self.jianpin.entries[n].to_le_bytes());
         }
-        let count = u32::from_le_bytes(data.get(24..28)?.try_into().ok()?) as usize;
-        let total = f64::from_le_bytes(data.get(28..36)?.try_into().ok()?);
-        let mut lex = MemoryLexicon::new();
-        let mut cursor = 36usize;
-        for _ in 0..count {
-            let word_len =
-                u16::from_le_bytes(data.get(cursor..cursor + 2)?.try_into().ok()?) as usize;
-            cursor += 2;
-            let word = std::str::from_utf8(data.get(cursor..cursor + word_len)?).ok()?;
-            cursor += word_len;
-            let freq = f64::from_le_bytes(data.get(cursor..cursor + 8)?.try_into().ok()?);
-            cursor += 8;
-            let n_keys = *data.get(cursor)? as usize;
-            cursor += 1;
-            let mut keys = Vec::with_capacity(n_keys);
-            for _ in 0..n_keys {
-                let raw = u16::from_le_bytes(data.get(cursor..cursor + 2)?.try_into().ok()?);
-                cursor += 2;
-                keys.push(decode_key(raw));
-            }
-            // 声母是键推出来的，快照里的那一份跳过去
-            let n_initials = *data.get(cursor)? as usize;
-            cursor += 1 + n_initials;
-            lex.push_entry(&keys, word, freq);
+        for hash in &self.full_prefixes {
+            buf.extend_from_slice(&hash.to_le_bytes());
         }
-        lex.finish();
-        lex.total_freq = total;
-        Some(lex)
+        for hash in &self.initial_prefixes {
+            buf.extend_from_slice(&hash.to_le_bytes());
+        }
+        debug_assert_eq!(buf.len(), data_len);
+        buf
     }
 
     /// 从 TSV 文本加载。
@@ -916,6 +885,35 @@ impl Lexicon for MemoryLexicon {
     fn len(&self) -> usize {
         self.word_spans.len()
     }
+}
+
+/// 打开词库：优先 mmap 快照（常驻的只是文件页），没有快照就从 TSV 建一份再映射。
+///
+/// 快照按「源文件大小 + mtime + 格式版本」校验，词库改了自动重建；写不进去
+/// （只读目录、磁盘满）就直接用内存里的那份，不影响使用。
+pub fn open_cached<P: AsRef<Path>>(path: P) -> Result<Arc<dyn Lexicon>> {
+    let path = path.as_ref();
+    let stamp = source_stamp(path);
+    if let Some((src_len, src_mtime)) = stamp {
+        for cache in cache_paths(path) {
+            if let Ok(lexicon) = CompiledLexicon::open(&cache, src_len, src_mtime) {
+                return Ok(Arc::new(lexicon));
+            }
+        }
+    }
+    let lexicon = MemoryLexicon::from_tsv_path(path)?;
+    if let Some((src_len, src_mtime)) = stamp {
+        let bytes = lexicon.snapshot_bytes(src_len, src_mtime);
+        for cache in cache_paths(path) {
+            if crate::fsutil::write_atomic(&cache, &bytes).is_err() {
+                continue;
+            }
+            if let Ok(compiled) = CompiledLexicon::open(&cache, src_len, src_mtime) {
+                return Ok(Arc::new(compiled));
+            }
+        }
+    }
+    Ok(Arc::new(lexicon))
 }
 
 /// 给束搜索用的视图：精确读音之外，再加上模糊音读音的词。
@@ -1498,6 +1496,543 @@ pub fn parse_pinyin_keys(pinyin: &str) -> Result<Vec<SyllableKey>> {
     Ok(keys)
 }
 
+// ===== 词库快照（v3）：mmap + 二分，常驻的只是文件页 =====
+
+/// 快照文件头。布局（全是小端）：
+///
+/// ```text
+/// 0  magic "WLC3"          4  version（音节表指纹一起）
+/// 8  src_len u64          16 src_mtime u64
+/// 24 count u32            28 jianpin_len u32
+/// 32 total_freq f64
+/// 40 offsets_at u32       44 records_at u32
+/// 48 full_at u32          52 jianpin_at u32
+/// 56 full_prefix_at u32   60 initial_prefix_at u32
+/// 64 full_prefix_len u32  68 initial_prefix_len u32
+/// 72 data_len u32
+/// ```
+///
+/// 后面依次是：`count+1` 个 u32 的词条记录偏移、词条记录（词长 u16 + 词 + 频次 f64 +
+/// 音节数 u8 + 音节 u16×n）、按哈希排好的全拼索引 `(u64, u32)`、简拼索引、
+/// 全拼前缀哈希、声母前缀哈希。索引里存的是词条号，记录按偏移随机访问。
+const FILE_MAGIC: &[u8; 4] = b"WLC3";
+const FILE_HEADER: usize = 76;
+
+/// 只读的字节来源：优先映射文件——映射出来的是干净的页，系统随时能回收，不占 swap；
+/// 映射不了（非 unix、空文件）就整个读进内存，行为和以前一样。
+pub(crate) enum Snapshot {
+    Owned(Vec<u8>),
+    Mapped { ptr: *const u8, len: usize },
+}
+
+impl Snapshot {
+    pub(crate) fn open(path: &Path) -> Result<Self> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::io::AsRawFd;
+            let file = fs::File::open(path)
+                .with_context(|| format!("打开词库快照失败: {}", path.display()))?;
+            let len = file.metadata()?.len() as usize;
+            if len > 0 {
+                // 只读、私有映射：内存里看到的就是文件内容，不会回写
+                let ptr = unsafe {
+                    libc::mmap(
+                        std::ptr::null_mut(),
+                        len,
+                        libc::PROT_READ,
+                        libc::MAP_PRIVATE,
+                        file.as_raw_fd(),
+                        0,
+                    )
+                };
+                if ptr != libc::MAP_FAILED {
+                    return Ok(Self::Mapped {
+                        ptr: ptr as *const u8,
+                        len,
+                    });
+                }
+            }
+        }
+        let data = fs::read(path)
+            .with_context(|| format!("读取词库快照失败: {}", path.display()))?;
+        Ok(Self::Owned(data))
+    }
+
+    pub(crate) fn as_slice(&self) -> &[u8] {
+        match self {
+            Self::Owned(data) => data,
+            Self::Mapped { ptr, len } => unsafe { std::slice::from_raw_parts(*ptr, *len) },
+        }
+    }
+}
+
+impl Snapshot {
+    /// 内存里的一份（测试、from_bytes 用）。
+    pub(crate) fn from_vec(data: Vec<u8>) -> Self {
+        Self::Owned(data)
+    }
+}
+
+impl Drop for Snapshot {
+    fn drop(&mut self) {
+        if let Self::Mapped { ptr, len } = *self {
+            unsafe {
+                libc::munmap(ptr as *mut libc::c_void, len);
+            }
+        }
+    }
+}
+
+// 映射的内存只读，生命周期跟着结构体；跨线程只读访问是安全的。
+unsafe impl Send for Snapshot {}
+unsafe impl Sync for Snapshot {}
+
+/// 从快照文件读出来的词库：正文、音节、索引全在映射里，查的时候直接二分。
+pub struct CompiledLexicon {
+    data: Snapshot,
+    count: usize,
+    jianpin_len: usize,
+    total_freq: f64,
+    offsets_at: usize,
+    records_at: usize,
+    full_at: usize,
+    jianpin_at: usize,
+    full_prefix_at: usize,
+    initial_prefix_at: usize,
+    full_prefix_len: usize,
+    initial_prefix_len: usize,
+    /// 模糊音索引：默认不建（模糊音默认关），第一次模糊查询时在内存里建一次。
+    fuzzy: OnceLock<HashIndex>,
+}
+
+impl CompiledLexicon {
+    /// 打开快照；版本、源文件指纹、各段位置对不上就返回错误（调用者回退到 TSV）。
+    fn open(path: &Path, src_len: u64, src_mtime: u64) -> Result<Self> {
+        let data = Snapshot::open(path)?;
+        let bytes = data.as_slice();
+        if bytes.len() < FILE_HEADER || &bytes[0..4] != FILE_MAGIC {
+            bail!("不是词库快照");
+        }
+        let version = Self::read_u32(bytes, 4)?;
+        if version != cache_version() {
+            bail!("快照版本不对");
+        }
+        if Self::read_u64(bytes, 8)? != src_len || Self::read_u64(bytes, 16)? != src_mtime {
+            bail!("快照和词库原文对不上");
+        }
+        let count = Self::read_u32(bytes, 24)? as usize;
+        let jianpin_len = Self::read_u32(bytes, 28)? as usize;
+        let total_freq = Self::read_f64(bytes, 32)?;
+        let offsets_at = Self::read_u32(bytes, 40)? as usize;
+        let records_at = Self::read_u32(bytes, 44)? as usize;
+        let full_at = Self::read_u32(bytes, 48)? as usize;
+        let jianpin_at = Self::read_u32(bytes, 52)? as usize;
+        let full_prefix_at = Self::read_u32(bytes, 56)? as usize;
+        let initial_prefix_at = Self::read_u32(bytes, 60)? as usize;
+        let full_prefix_len = Self::read_u32(bytes, 64)? as usize;
+        let initial_prefix_len = Self::read_u32(bytes, 68)? as usize;
+        let data_len = Self::read_u32(bytes, 72)? as usize;
+        if data_len != bytes.len()
+            || offsets_at + (count + 1) * 4 > records_at
+            || records_at > full_at
+            || full_at + count * 12 > jianpin_at
+            || jianpin_at + jianpin_len * 12 > full_prefix_at
+            || full_prefix_at + full_prefix_len * 8 > initial_prefix_at
+            || initial_prefix_at + initial_prefix_len * 8 > bytes.len()
+        {
+            bail!("快照的段位置不对");
+        }
+        Ok(Self {
+            data,
+            count,
+            jianpin_len,
+            total_freq,
+            offsets_at,
+            records_at,
+            full_at,
+            jianpin_at,
+            full_prefix_at,
+            initial_prefix_at,
+            full_prefix_len,
+            initial_prefix_len,
+            fuzzy: OnceLock::new(),
+        })
+    }
+
+    fn bytes(&self) -> &[u8] {
+        self.data.as_slice()
+    }
+
+    fn read_u32(bytes: &[u8], at: usize) -> Result<u32> {
+        Ok(u32::from_le_bytes(
+            bytes
+                .get(at..at + 4)
+                .ok_or_else(|| anyhow!("快照截断了"))?
+                .try_into()
+                .unwrap(),
+        ))
+    }
+
+    fn read_u64(bytes: &[u8], at: usize) -> Result<u64> {
+        Ok(u64::from_le_bytes(
+            bytes
+                .get(at..at + 8)
+                .ok_or_else(|| anyhow!("快照截断了"))?
+                .try_into()
+                .unwrap(),
+        ))
+    }
+
+    fn read_f64(bytes: &[u8], at: usize) -> Result<f64> {
+        Ok(f64::from_le_bytes(
+            bytes
+                .get(at..at + 8)
+                .ok_or_else(|| anyhow!("快照截断了"))?
+                .try_into()
+                .unwrap(),
+        ))
+    }
+
+    /// 第 i 条词的记录（词长 u16 + 词 + 频次 f64 + 音节数 u8 + 音节 u16×n）。
+    fn record(&self, entry: usize) -> &[u8] {
+        let bytes = self.bytes();
+        let start = u32::from_le_bytes(
+            bytes[self.offsets_at + entry * 4..self.offsets_at + entry * 4 + 4]
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        let end = u32::from_le_bytes(
+            bytes[self.offsets_at + entry * 4 + 4..self.offsets_at + entry * 4 + 8]
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        &bytes[self.records_at + start..self.records_at + end]
+    }
+
+    fn word(&self, entry: usize) -> &str {
+        let record = self.record(entry);
+        let len = u16::from_le_bytes([record[0], record[1]]) as usize;
+        std::str::from_utf8(&record[2..2 + len]).unwrap_or("")
+    }
+
+    fn freq_at(&self, entry: usize) -> f64 {
+        let record = self.record(entry);
+        let len = u16::from_le_bytes([record[0], record[1]]) as usize;
+        f64::from_le_bytes(record[2 + len..2 + len + 8].try_into().unwrap())
+    }
+
+    /// 记录里音节那一段（音节数 u8 + u16×n）。
+    fn key_bytes(&self, entry: usize) -> &[u8] {
+        let record = self.record(entry);
+        let len = u16::from_le_bytes([record[0], record[1]]) as usize;
+        let at = 2 + len + 8;
+        let count = record[at] as usize;
+        &record[at + 1..at + 1 + count * 2]
+    }
+
+    fn key_count(&self, entry: usize) -> usize {
+        let record = self.record(entry);
+        let len = u16::from_le_bytes([record[0], record[1]]) as usize;
+        record[2 + len + 8] as usize
+    }
+
+    fn key_at(&self, entry: usize, at: usize) -> SyllableKey {
+        let keys = self.key_bytes(entry);
+        decode_key(u16::from_le_bytes([keys[at * 2], keys[at * 2 + 1]]))
+    }
+
+    fn initial_at(&self, entry: usize, at: usize) -> Option<u8> {
+        if at >= self.key_count(entry) {
+            return None;
+        }
+        syllable_text(self.key_at(entry, at).id).map(|text| text.as_bytes()[0])
+    }
+
+    fn is_rare(&self, entry: usize) -> bool {
+        self.freq_at(entry) < 1.0 && self.word(entry).char_indices().nth(1).is_none()
+    }
+
+    fn entry(&self, entry: usize) -> LexEntry {
+        let count = self.key_count(entry);
+        let keys: Vec<SyllableKey> = (0..count).map(|at| self.key_at(entry, at)).collect();
+        let initials = keys
+            .iter()
+            .map(|key| syllable_text(key.id).map_or(0, |text| text.as_bytes()[0]))
+            .collect();
+        LexEntry {
+            word: self.word(entry).to_string(),
+            freq: self.freq_at(entry),
+            keys,
+            initials,
+        }
+    }
+
+    /// 索引里哈希为 hash 的那一段词条号（二分；碰撞的混进来，调用者核对读音）。
+    fn group(&self, at: usize, len: usize, hash: u64) -> &[u8] {
+        let bytes = self.bytes();
+        let rows = &bytes[at..at + len * 12];
+        let mut lo = 0usize;
+        let mut hi = len;
+        while lo < hi {
+            let mid = (lo + hi) / 2;
+            let h = u64::from_le_bytes(rows[mid * 12..mid * 12 + 8].try_into().unwrap());
+            if h < hash {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        let start = lo;
+        let mut hi = len;
+        while lo < hi {
+            let mid = (lo + hi) / 2;
+            let h = u64::from_le_bytes(rows[mid * 12..mid * 12 + 8].try_into().unwrap());
+            if h == hash {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        &rows[start * 12..lo * 12]
+    }
+
+    fn entry_at_row(row: &[u8]) -> usize {
+        u32::from_le_bytes(row[8..12].try_into().unwrap()) as usize
+    }
+
+    fn contains_hash(&self, at: usize, len: usize, hash: u64) -> bool {
+        let bytes = self.bytes();
+        let rows = &bytes[at..at + len * 8];
+        let mut lo = 0usize;
+        let mut hi = len;
+        while lo < hi {
+            let mid = (lo + hi) / 2;
+            let h = u64::from_le_bytes(rows[mid * 8..mid * 8 + 8].try_into().unwrap());
+            if h < hash {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        lo < len && u64::from_le_bytes(rows[lo * 8..lo * 8 + 8].try_into().unwrap()) == hash
+    }
+
+    fn matches(&self, entry: usize, query: &[SyllableQuery]) -> bool {
+        if self.key_count(entry) != query.len() {
+            return false;
+        }
+        query.iter().enumerate().all(|(at, q)| {
+            let key = self.key_at(entry, at);
+            match q {
+                SyllableQuery::Full { id, erhua } => key.id == *id && key.erhua == *erhua,
+                SyllableQuery::Jianpin { letter } => {
+                    match crate::syllable::jianpin_required_initial(*letter) {
+                        Some(initial) => syllable_text(key.id)
+                            .is_some_and(|text| text.starts_with(initial)),
+                        None => self.initial_at(entry, at) == Some(*letter),
+                    }
+                }
+            }
+        })
+    }
+
+    fn keys_equal(&self, entry: usize, keys: &[SyllableKey]) -> bool {
+        self.key_count(entry) == keys.len()
+            && (0..keys.len()).all(|at| self.key_at(entry, at) == keys[at])
+    }
+
+    fn initials_equal(&self, entry: usize, letters: &[u8]) -> bool {
+        self.key_count(entry) == letters.len()
+            && (0..letters.len()).all(|at| self.initial_at(entry, at) == Some(letters[at]))
+    }
+
+    fn collect(
+        &self,
+        rows: &[u8],
+        skip_rare: bool,
+        keep: impl Fn(usize) -> bool,
+    ) -> Vec<LexEntry> {
+        rows.chunks_exact(12)
+            .map(Self::entry_at_row)
+            .filter(|&entry| !(skip_rare && self.is_rare(entry)) && keep(entry))
+            .map(|entry| self.entry(entry))
+            .collect()
+    }
+
+    fn lookup_impl(&self, query: &[SyllableQuery], skip_rare: bool) -> Vec<LexEntry> {
+        if query.is_empty() {
+            return Vec::new();
+        }
+        let all_full = query
+            .iter()
+            .all(|q| matches!(q, SyllableQuery::Full { .. }));
+        let all_jianpin = query
+            .iter()
+            .all(|q| matches!(q, SyllableQuery::Jianpin { .. }));
+
+        if all_full {
+            let keys: Vec<SyllableKey> = query
+                .iter()
+                .map(|q| match q {
+                    SyllableQuery::Full { id, erhua } => SyllableKey::new(*id, *erhua),
+                    _ => unreachable!(),
+                })
+                .collect();
+            let mut hash = KEY_HASH_SEED;
+            for key in &keys {
+                hash = key_hash_step(hash, *key);
+            }
+            let rows = self.group(self.full_at, self.count, hash);
+            return self.collect(rows, skip_rare, |entry| self.keys_equal(entry, &keys));
+        }
+
+        if all_jianpin && !query.iter().any(needs_initial_check) {
+            let letters: Vec<u8> = query
+                .iter()
+                .map(|q| match q {
+                    SyllableQuery::Jianpin { letter } => *letter,
+                    _ => unreachable!(),
+                })
+                .collect();
+            let mut hash = KEY_HASH_SEED;
+            for &letter in &letters {
+                hash = initial_hash_step(hash, letter);
+            }
+            let rows = self.group(self.jianpin_at, self.jianpin_len, hash);
+            return self.collect(rows, skip_rare, |entry| self.initials_equal(entry, &letters));
+        }
+
+        let Some(initials) = query_initials(query) else {
+            return Vec::new();
+        };
+        let mut hash = KEY_HASH_SEED;
+        for &letter in &initials {
+            hash = initial_hash_step(hash, letter);
+        }
+        let rows = self.group(self.jianpin_at, self.jianpin_len, hash);
+        self.collect(rows, skip_rare, |entry| self.matches(entry, query))
+    }
+
+    fn build_fuzzy_index(&self) -> HashIndex {
+        let mut index = HashIndex::default();
+        for entry in 0..self.len() {
+            let mut hash = KEY_HASH_SEED;
+            let mut ok = true;
+            for at in 0..self.key_count(entry) {
+                match crate::syllable::fuzzy_key(self.key_at(entry, at).id) {
+                    Some(canon) => hash = fuzzy_hash_step(hash, canon),
+                    None => {
+                        ok = false;
+                        break;
+                    }
+                }
+            }
+            if ok {
+                index.push(hash, entry as u32);
+            }
+        }
+        // 同一个哈希的按词条号（就是加入顺序）排，和内存词库那份一样
+        let mut rows: Vec<(u64, u32)> = index
+            .hashes
+            .iter()
+            .copied()
+            .zip(index.entries.iter().copied())
+            .collect();
+        rows.sort_unstable();
+        let mut sorted = HashIndex::default();
+        sorted.hashes.reserve(rows.len());
+        sorted.entries.reserve(rows.len());
+        for (hash, entry) in rows {
+            sorted.push(hash, entry);
+        }
+        sorted
+    }
+}
+
+impl Lexicon for CompiledLexicon {
+    fn lookup(&self, query: &[SyllableQuery]) -> Vec<LexEntry> {
+        self.lookup_impl(query, false)
+    }
+
+    fn lookup_common(&self, query: &[SyllableQuery]) -> Vec<LexEntry> {
+        self.lookup_impl(query, true)
+    }
+
+    fn has_longer(&self, query: &[SyllableQuery]) -> bool {
+        if query.iter().any(|q| q.is_jianpin()) {
+            let Some(initials) = query_initials(query) else {
+                return true;
+            };
+            let hash = initials
+                .iter()
+                .fold(KEY_HASH_SEED, |h, &letter| initial_hash_step(h, letter));
+            return self.contains_hash(self.initial_prefix_at, self.initial_prefix_len, hash);
+        }
+        let mut hash = KEY_HASH_SEED;
+        for q in query {
+            if let SyllableQuery::Full { id, erhua } = q {
+                hash = key_hash_step(hash, SyllableKey::new(*id, *erhua));
+            }
+        }
+        self.contains_hash(self.full_prefix_at, self.full_prefix_len, hash)
+    }
+
+    fn prepare_fuzzy(&self) {
+        // 模糊音默认关：快照里不带这张表，第一次模糊查询时再建（几秒内建好，别占常驻）
+        if self.fuzzy.get().is_none() {
+            self.fuzzy.get_or_init(|| self.build_fuzzy_index());
+        }
+    }
+
+    fn lookup_fuzzy(&self, query: &[SyllableQuery], groups: u32) -> Vec<LexEntry> {
+        if query.is_empty() || groups == 0 {
+            return Vec::new();
+        }
+        let mut ids = Vec::with_capacity(query.len());
+        let mut hash = KEY_HASH_SEED;
+        for q in query {
+            match q {
+                SyllableQuery::Full { id, erhua } => {
+                    if *erhua {
+                        return Vec::new();
+                    }
+                    match crate::syllable::fuzzy_key(*id) {
+                        Some(canon) => {
+                            hash = fuzzy_hash_step(hash, canon);
+                            ids.push(*id);
+                        }
+                        None => return Vec::new(),
+                    }
+                }
+                SyllableQuery::Jianpin { .. } => return Vec::new(),
+            }
+        }
+        let index = self.fuzzy.get_or_init(|| self.build_fuzzy_index());
+        let start = index.hashes.partition_point(|&h| h < hash);
+        let len = index.hashes[start..].partition_point(|&h| h == hash);
+        index.entries[start..start + len]
+            .iter()
+            .map(|&entry| entry as usize)
+            .filter(|&entry| {
+                self.key_count(entry) == ids.len()
+                    && (0..ids.len()).all(|at| {
+                        crate::syllable::fuzzy_groups_between(ids[at], self.key_at(entry, at).id)
+                            .is_some_and(|need| need & !groups == 0)
+                    })
+            })
+            .map(|entry| self.entry(entry))
+            .collect()
+    }
+
+    fn total_freq(&self) -> f64 {
+        self.total_freq
+    }
+
+    fn len(&self) -> usize {
+        self.count
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1691,24 +2226,33 @@ mod tests {
         assert_eq!(guess(""), None);
     }
 
+    fn words_of(lex: &dyn Lexicon, text: &[&str]) -> Vec<String> {
+        let query: Vec<SyllableQuery> = text
+            .iter()
+            .map(|t| Syllable::from_text(t).unwrap().query(false))
+            .collect();
+        lex.lookup(&query).into_iter().map(|e| e.word).collect()
+    }
+
     #[test]
     fn cache_roundtrip_matches_tsv() {
         let path = temp_lexicon("rt", "ni hao\t你好\t100\nzhong guo\t中国\t50\n");
-        let first = MemoryLexicon::from_tsv_path_cached(&path).unwrap();
+        let first = open_cached(&path).unwrap();
         assert!(cache_path(&path).exists(), "第一次加载应当写出快照");
-        let second = MemoryLexicon::from_tsv_path_cached(&path).unwrap();
+        let second = open_cached(&path).unwrap();
         assert_eq!(first.len(), second.len());
-        for i in 0..first.len() {
-            assert_eq!(first.entry(i), second.entry(i), "第 {i} 条对不上");
+        assert_eq!(first.total_freq(), second.total_freq());
+        for input in [&["ni", "hao"][..], &["zhong", "guo"][..], &["ni"][..]] {
+            assert_eq!(words_of(&*first, input), words_of(&*second, input));
         }
-        assert_eq!(first.total_freq, second.total_freq);
+        assert_eq!(words_of(&*second, &["ni", "hao"]), vec!["你好"]);
         cleanup(&path);
     }
 
     #[test]
     fn stale_cache_is_ignored() {
         let path = temp_lexicon("stale", "ni hao\t你好\t100\n");
-        let first = MemoryLexicon::from_tsv_path_cached(&path).unwrap();
+        let first = open_cached(&path).unwrap();
         assert_eq!(first.len(), 1);
         // 源文件变了（内容更长），旧快照必须失效
         std::fs::write(
@@ -1716,35 +2260,40 @@ mod tests {
             "ni hao\t你好\t100\nzhong guo\t中国\t50\nshi jie\t世界\t30\n",
         )
         .unwrap();
-        let second = MemoryLexicon::from_tsv_path_cached(&path).unwrap();
+        let second = open_cached(&path).unwrap();
         assert_eq!(second.len(), 3, "源文件更新后应当重新解析");
         cleanup(&path);
     }
 
     #[test]
     fn cache_from_other_syllable_table_is_ignored() {
-        // 音节表改了（版本号还是旧的那个）：快照里的音节 ID 对不上，必须重新解析
+        // 音节表改了（版本号对不上）：快照里的音节 ID 不能用，必须重新解析
         let path = temp_lexicon("table", "ni hao\t你好\t100\n");
         let lex = MemoryLexicon::from_tsv_path(&path).unwrap();
         let (len, mtime) = source_stamp(&path).unwrap();
         let cache = cache_path(&path);
-        lex.write_cache(&cache, len, mtime).unwrap();
-        let mut data = std::fs::read(&cache).unwrap();
-        assert!(MemoryLexicon::read_cache(&data, len, mtime).is_some());
-        data[4..8].copy_from_slice(&CACHE_VERSION.to_le_bytes());
-        assert!(MemoryLexicon::read_cache(&data, len, mtime).is_none());
+        let mut data = lex.snapshot_bytes(len, mtime);
+        std::fs::write(&cache, &data).unwrap();
+        assert!(CompiledLexicon::open(&cache, len, mtime).is_ok());
+        data[4..8].copy_from_slice(&(CACHE_VERSION.wrapping_add(1)).to_le_bytes());
+        std::fs::write(&cache, &data).unwrap();
+        assert!(CompiledLexicon::open(&cache, len, mtime).is_err());
+        // open_cached 回退到 TSV，结果还是对的
+        let opened = open_cached(&path).unwrap();
+        assert_eq!(words_of(&*opened, &["ni", "hao"]), vec!["你好"]);
         cleanup(&path);
     }
 
     #[test]
     fn corrupt_cache_falls_back_to_tsv() {
         let path = temp_lexicon("corrupt", "ni hao\t你好\t100\n");
-        let _ = MemoryLexicon::from_tsv_path_cached(&path).unwrap();
+        let _ = open_cached(&path).unwrap();
         std::fs::write(cache_path(&path), b"not a cache").unwrap();
-        let lex = MemoryLexicon::from_tsv_path_cached(&path).unwrap();
+        let lex = open_cached(&path).unwrap();
         assert_eq!(lex.len(), 1, "快照损坏时应回退到 TSV");
         cleanup(&path);
     }
+
     #[test]
     fn placeholder_weight_words_get_estimated_from_their_parts() {
         let mut lex = MemoryLexicon::from_tsv_str(

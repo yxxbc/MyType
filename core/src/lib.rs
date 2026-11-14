@@ -49,7 +49,7 @@ pub use crate::convert::Converter;
 pub use crate::graph::{Edge, EdgeKind, GraphMode, GraphOptions, SyllableGraph};
 pub use crate::learn::{LearnedLm, UserPairs};
 pub use crate::lexicon::{
-    FuzzyLexicon, LexEntry, Lexicon, MemoryLexicon, SyllableKey, UserLexicon,
+    open_cached, FuzzyLexicon, LexEntry, Lexicon, MemoryLexicon, SyllableKey, UserLexicon,
 };
 pub use crate::lm::{ArpaLm, BigramLm, LanguageModel};
 pub use crate::rank::{

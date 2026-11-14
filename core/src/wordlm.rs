@@ -19,11 +19,11 @@
 //! m × f32  分数
 //! ```
 
-use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::{bail, Context, Result};
 
+use crate::lexicon::Snapshot;
 use crate::lm::LanguageModel;
 
 pub const MAGIC: &[u8; 4] = b"WTLM";
@@ -36,84 +36,156 @@ pub const BOS: &str = "<s>";
 pub const OOV_FLOOR: f64 = -1.5;
 
 pub struct WordLm {
-    ids: HashMap<String, u32>,
-    words: Vec<String>,
-    backoff: Vec<f32>,
-    starts: Vec<u32>,
-    curs: Vec<u32>,
-    scores: Vec<f32>,
+    /// 模型文件本体。映射出来的，常驻的只有被查到的页；测试里用内存里的一份。
+    data: Snapshot,
+    n: usize,
+    m: usize,
+    backoff_at: usize,
+    starts_at: usize,
+    curs_at: usize,
+    scores_at: usize,
+    /// 每个词在文件里的 (偏移, 长度)
+    spans: Vec<(u32, u16)>,
+    /// 按词的字节序排好的词号，查词用二分（346k 词 ≈ 1.4 MB）
+    order: Vec<u32>,
 }
 
 impl WordLm {
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref();
-        let data = std::fs::read(path).with_context(|| format!("读取 {}", path.display()))?;
-        Self::from_bytes(&data).with_context(|| format!("解析 {}", path.display()))
+        let data = Snapshot::open(path)
+            .with_context(|| format!("读取 {}", path.display()))?;
+        Self::parse(data).with_context(|| format!("解析 {}", path.display()))
     }
 
     pub fn from_bytes(data: &[u8]) -> Result<Self> {
-        let mut r = Reader { d: data, at: 0 };
-        if r.take(4)? != MAGIC {
+        Self::parse(Snapshot::from_vec(data.to_vec()))
+    }
+
+    fn parse(data: Snapshot) -> Result<Self> {
+        let bytes = data.as_slice();
+        if bytes.len() < 16 || &bytes[0..4] != MAGIC {
             bail!("不是 WowType 词级语言模型");
         }
-        let version = r.u32()?;
+        let version = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
         if version != VERSION {
             bail!("版本 {version} 不认识");
         }
-        let n = r.u32()? as usize;
-        let m = r.u32()? as usize;
-        let mut words = Vec::with_capacity(n);
-        let mut ids = HashMap::with_capacity(n);
-        for i in 0..n {
-            let len = r.take(1)?[0] as usize;
-            let w = std::str::from_utf8(r.take(len)?)
-                .context("词表不是 UTF-8")?
-                .to_string();
-            ids.insert(w.clone(), i as u32);
-            words.push(w);
+        let n = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
+        let m = u32::from_le_bytes(bytes[12..16].try_into().unwrap()) as usize;
+        let mut spans: Vec<(u32, u16)> = Vec::with_capacity(n);
+        let mut at = 16usize;
+        for _ in 0..n {
+            let len = *bytes.get(at).context("文件截断")? as usize;
+            at += 1;
+            if bytes.get(at..at + len).is_none() {
+                bail!("文件截断");
+            }
+            spans.push((at as u32, len as u16));
+            at += len;
         }
-        let backoff = r.f32s(n)?;
-        let starts = r.u32s(n + 1)?;
-        let curs = r.u32s(m)?;
-        let scores = r.f32s(m)?;
-        if starts.last().copied() != Some(m as u32) || starts.windows(2).any(|w| w[0] > w[1]) {
+        let backoff_at = at;
+        let starts_at = backoff_at + n * 4;
+        let curs_at = starts_at + (n + 1) * 4;
+        let scores_at = curs_at + m * 4;
+        if scores_at + m * 4 != bytes.len() {
+            bail!(
+                "文件末尾对不上（{} 字节，按头算应该是 {}）",
+                bytes.len(),
+                scores_at + m * 4
+            );
+        }
+        let mut order: Vec<u32> = (0..n as u32).collect();
+        order.sort_unstable_by(|&a, &b| {
+            Self::word_of(bytes, &spans, a).cmp(Self::word_of(bytes, &spans, b))
+        });
+        let lm = Self {
+            data,
+            n,
+            m,
+            backoff_at,
+            starts_at,
+            curs_at,
+            scores_at,
+            spans,
+            order,
+        };
+        if lm.u32_at(lm.starts_at + n * 4) as usize != m || (0..n).any(|i| lm.range(i as u32).0 > lm.range(i as u32).1) {
             bail!("二元组索引坏了");
         }
-        if r.at != data.len() {
-            bail!("文件末尾多了 {} 字节", data.len() - r.at);
-        }
-        Ok(Self {
-            ids,
-            words,
-            backoff,
-            starts,
-            curs,
-            scores,
-        })
+        Ok(lm)
+    }
+
+    fn word_of<'a>(bytes: &'a [u8], spans: &[(u32, u16)], id: u32) -> &'a str {
+        let (offset, len) = spans[id as usize];
+        std::str::from_utf8(&bytes[offset as usize..offset as usize + len as usize]).unwrap_or("")
+    }
+
+    fn word(&self, id: u32) -> &str {
+        Self::word_of(self.data.as_slice(), &self.spans, id)
+    }
+
+    /// 词在词表里的编号。
+    pub fn id(&self, word: &str) -> Option<u32> {
+        let at = self
+            .order
+            .binary_search_by(|&id| self.word(id).cmp(word))
+            .ok()?;
+        Some(self.order[at])
+    }
+
+    fn u32_at(&self, at: usize) -> u32 {
+        let bytes = self.data.as_slice();
+        u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap())
+    }
+
+    fn f32_at(&self, at: usize) -> f32 {
+        let bytes = self.data.as_slice();
+        f32::from_le_bytes(bytes[at..at + 4].try_into().unwrap())
+    }
+
+    fn backoff(&self, id: u32) -> f32 {
+        self.f32_at(self.backoff_at + id as usize * 4)
+    }
+
+    /// prev 后面所有搭配在 curs 里的区间。
+    fn range(&self, prev: u32) -> (usize, usize) {
+        (
+            self.u32_at(self.starts_at + prev as usize * 4) as usize,
+            self.u32_at(self.starts_at + prev as usize * 4 + 4) as usize,
+        )
+    }
+
+    fn curs(&self, at: usize) -> u32 {
+        self.u32_at(self.curs_at + at * 4)
     }
 
     pub fn words(&self) -> usize {
-        self.words.len()
+        self.n
     }
 
     pub fn bigrams(&self) -> usize {
-        self.curs.len()
+        self.m
     }
 
     fn pair(&self, prev: u32, cur: u32) -> Option<f32> {
-        let (a, b) = (
-            self.starts[prev as usize] as usize,
-            self.starts[prev as usize + 1] as usize,
-        );
-        let row = &self.curs[a..b];
-        row.binary_search(&cur).ok().map(|i| self.scores[a + i])
+        let (mut lo, mut hi) = self.range(prev);
+        while lo < hi {
+            let mid = (lo + hi) / 2;
+            match self.curs(mid).cmp(&cur) {
+                std::cmp::Ordering::Less => lo = mid + 1,
+                std::cmp::Ordering::Greater => hi = mid,
+                std::cmp::Ordering::Equal => return Some(self.f32_at(self.scores_at + mid * 4)),
+            }
+        }
+        None
     }
 }
 
 impl LanguageModel for WordLm {
     fn score(&self, prev: Option<&str>, cur: &str) -> f64 {
         // 前一个词不在模型里：没有可用的信息，给 0
-        let Some(&p) = self.ids.get(prev.unwrap_or(BOS)) else {
+        let Some(p) = self.id(prev.unwrap_or(BOS)) else {
             return 0.0;
         };
         // 当前词不在模型里（语料里太少见、被裁掉了）：按「没见过的搭配」给回退分（≤ 0），
@@ -123,74 +195,37 @@ impl LanguageModel for WordLm {
         // 不再额外罚分：实测再罚会把这类词所在的整句挤出前几名（日常句 90.6% -> 87.7%）。
         // 回退分再设个下限 OOV_FLOOR：句首的回退分低到 −4.2，热词表里补的新词（大模型、黑神话、
         // 永远的神）都不在模型里，30000 的词频实际只顶 450 用。
-        let Some(&c) = self.ids.get(cur) else {
-            return (self.backoff[p as usize] as f64).max(OOV_FLOOR);
+        let Some(c) = self.id(cur) else {
+            return (self.backoff(p) as f64).max(OOV_FLOOR);
         };
         match self.pair(p, c) {
             Some(s) => s as f64,
-            None => self.backoff[p as usize] as f64,
+            None => self.backoff(p) as f64,
         }
     }
 
     fn knows_word(&self, word: &str) -> Option<bool> {
-        Some(self.ids.contains_key(word))
+        Some(self.id(word).is_some())
     }
 
     fn has_bigram(&self, prev: &str, cur: &str) -> bool {
-        match (self.ids.get(prev), self.ids.get(cur)) {
-            (Some(&p), Some(&c)) => self.pair(p, c).is_some(),
+        match (self.id(prev), self.id(cur)) {
+            (Some(p), Some(c)) => self.pair(p, c).is_some(),
             _ => false,
         }
     }
 
     fn top_next(&self, prev: &str, limit: usize) -> Vec<(String, f64)> {
-        let Some(&p) = self.ids.get(prev) else {
+        let Some(p) = self.id(prev) else {
             return Vec::new();
         };
-        let (a, b) = (
-            self.starts[p as usize] as usize,
-            self.starts[p as usize + 1] as usize,
-        );
+        let (a, b) = self.range(p);
         let mut items: Vec<(String, f64)> = (a..b)
-            .map(|i| {
-                (
-                    self.words[self.curs[i] as usize].clone(),
-                    self.scores[i] as f64,
-                )
-            })
+            .map(|i| (self.word(self.curs(i)).to_string(), self.f32_at(self.scores_at + i * 4) as f64))
             .collect();
         items.sort_by(|x, y| y.1.total_cmp(&x.1).then_with(|| x.0.cmp(&y.0)));
         items.truncate(limit);
         items
-    }
-}
-
-struct Reader<'a> {
-    d: &'a [u8],
-    at: usize,
-}
-
-impl<'a> Reader<'a> {
-    fn take(&mut self, n: usize) -> Result<&'a [u8]> {
-        let s = self.d.get(self.at..self.at + n).context("文件截断")?;
-        self.at += n;
-        Ok(s)
-    }
-    fn u32(&mut self) -> Result<u32> {
-        let b = self.take(4)?;
-        Ok(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-    }
-    fn u32s(&mut self, n: usize) -> Result<Vec<u32>> {
-        let b = self.take(n * 4)?;
-        Ok(b.chunks_exact(4)
-            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-            .collect())
-    }
-    fn f32s(&mut self, n: usize) -> Result<Vec<f32>> {
-        let b = self.take(n * 4)?;
-        Ok(b.chunks_exact(4)
-            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-            .collect())
     }
 }
 

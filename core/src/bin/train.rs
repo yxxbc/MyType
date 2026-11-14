@@ -13,7 +13,7 @@ use std::sync::Arc;
 use wowtype_core::lm::{ArpaLm, BigramLm, LanguageModel};
 use wowtype_core::rank::{FeatureWeights, FEATURE_NAMES};
 use wowtype_core::train::{accuracy, train, Sample, TrainConfig};
-use wowtype_core::{Engine, EngineConfig, Lexicon, MemoryLexicon};
+use wowtype_core::{open_cached, Engine, EngineConfig, Lexicon};
 
 fn fail(msg: &str) -> ! {
     eprintln!("{msg}");
@@ -56,7 +56,7 @@ fn main() {
         fail("需要 --lexicon 与 --cases");
     }
 
-    let lexicon = MemoryLexicon::from_tsv_path_cached(&lexicon_path)
+    let lexicon = open_cached(&lexicon_path)
         .unwrap_or_else(|e| fail(&format!("词库载入失败: {e:#}")));
     let lm: Arc<dyn LanguageModel> = if let Some(path) = &arpa {
         Arc::new(ArpaLm::from_arpa_path(path).unwrap_or_else(|e| fail(&format!("{e:#}"))))
@@ -65,7 +65,7 @@ fn main() {
     } else {
         Arc::new(BigramLm::default())
     };
-    let lex: Arc<dyn Lexicon> = Arc::new(lexicon);
+    let lex: Arc<dyn Lexicon> = lexicon;
     let engine_config = EngineConfig {
         max_candidates: 10,
         ..EngineConfig::default()
