@@ -18,6 +18,7 @@
 </p>
 
 <p align="center">
+  <a href="#界面">界面</a> ·
   <a href="#安装">安装</a> ·
   <a href="#功能">功能</a> ·
   <a href="#更新">更新</a> ·
@@ -28,10 +29,18 @@
 
 ---
 
+## 界面
+
 <p align="center">
-  <img src="docs/images/candidate.png" width="600" alt="输入 zhe'shi'w'd'shu'ru'fa'hen'gao'x'yu'ni'jian'm，候选「这是我的输入法很高兴与你见面」">
+  <img src="docs/images/candidate.png" width="680" alt="输入 zhe'shi'w'd'shu'ru'fa'hen'gao'x'yu'ni'jian'm，候选「这是我的输入法很高兴与你见面」">
   <br>
   <sub>打 <code>zhe'shi'w'd'shu'ru'fa'hen'gao'x'yu'ni'jian'm</code>，第一个候选就是「这是我的输入法很高兴与你见面」</sub>
+</p>
+
+<p align="center">
+  <img src="docs/images/voice.png" width="392" alt="语音输入浮层：麦克风、跟音量动的波形和识别中的文字">
+  <br>
+  <sub>按住右 Option 说话：麦克风、波形、识别中的字都在输入框旁边，松开上屏</sub>
 </p>
 
 ## 功能
