@@ -10,6 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/yxxbc/MyType/releases/latest"><img src="https://img.shields.io/github/v/release/yxxbc/MyType?display_name=tag&sort=semver&color=2ea44f" alt="Release"></a>
+  <a href="https://github.com/yxxbc/MyType/actions/workflows/ci.yml"><img src="https://github.com/yxxbc/MyType/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/macOS-12%2B-black?logo=apple&logoColor=white" alt="macOS 12+">
   <img src="https://img.shields.io/badge/arch-arm64%20%7C%20x86__64-lightgrey" alt="arm64 | x86_64">
   <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20%7C%20Apache--2.0-blue" alt="License"></a>
