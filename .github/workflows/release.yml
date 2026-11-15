@@ -41,7 +41,7 @@ env:
 jobs:
   release:
     name: 构建并发布
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 60
     steps:
       - name: 取 tag
