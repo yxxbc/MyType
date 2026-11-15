@@ -27,6 +27,12 @@
 
 ---
 
+<p align="center">
+  <img src="docs/images/candidate.png" width="300" alt="输入 w'd'shu'ru'fa，候选「我的输入法」">
+  <br>
+  <sub>打 <code>w'd'shu'ru'fa</code>，第一个候选就是「我的输入法」</sub>
+</p>
+
 ## 功能
 
 | 特性 | 说明 |
