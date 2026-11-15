@@ -28,9 +28,9 @@
 ---
 
 <p align="center">
-  <img src="docs/images/candidate.png" width="300" alt="输入 w'd'shu'ru'fa，候选「我的输入法」">
+  <img src="docs/images/candidate.png" width="600" alt="输入 zhe'shi'w'd'shu'ru'fa'hen'gao'x'yu'ni'jian'm，候选「这是我的输入法很高兴与你见面」">
   <br>
-  <sub>打 <code>w'd'shu'ru'fa</code>，第一个候选就是「我的输入法」</sub>
+  <sub>打 <code>zhe'shi'w'd'shu'ru'fa'hen'gao'x'yu'ni'jian'm</code>，第一个候选就是「这是我的输入法很高兴与你见面」</sub>
 </p>
 
 ## 功能
