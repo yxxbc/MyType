@@ -15,6 +15,7 @@
 </p>
 
 <p align="center">
+  <a href="https://mytype.xynrin.cc.cd">官网</a> ·
   <a href="#界面">界面</a> ·
   <a href="#安装">安装</a> ·
   <a href="#功能">功能</a> ·

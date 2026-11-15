@@ -1,0 +1,13 @@
+{
+  "name": "mytype-website",
+  "private": true,
+  "version": "1.0.0",
+  "description": "MyType 的官网",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.162.0"
+  }
+}

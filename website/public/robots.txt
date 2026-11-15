@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://mytype.xynrin.cc.cd/sitemap.xml
