@@ -1,8 +1,8 @@
 // 可选词库包（万象拼音）：Release 上的 wowtype-data-wanxiang-<版本>.tar.gz。
-// 规矩和 Linux 设置（settings/wowtype-config 的 install_lexicon_pack 等）一模一样：
+// 规矩：
 // 包里只许有 lexicon.tsv、LICENSE、SOURCE.txt、VERSION 四个普通文件；lexicon.tsv 每行至少「拼音<TAB>词」，
 // 少于 10 万条当成不完整；按 SHA256SUMS 校验，校验值重复、无效、缺失都不装；发布页上有好几个包时取版本最大的。
-// 下载、解压在 App 层（LexiconPackInstaller），这里只放规矩，不依赖 Foundation，测试在 Linux 上也能跑。
+// 下载、解压在 App 层（LexiconPackInstaller），这里只放规矩，不依赖 Foundation，不依赖 Foundation。
 // 规矩以 spec/lexicon-pack.json 为准：改了要先改规格，macos/test.sh 拿规格里的常量和例子对照。
 
 #if canImport(Glibc)
@@ -16,7 +16,7 @@ public enum LexiconPack {
     public static let files: Set<String> = ["lexicon.tsv", "LICENSE", "SOURCE.txt", "VERSION"]
     /// lexicon.tsv 少于这么多条当成没下完整
     public static let minEntries = 100_000
-    /// 数据目录下放万象的地方（Linux 是 ~/.local/share/wowtype/dicts/wanxiang）
+    /// 数据目录下放万象的地方：~/Library/Application Support/MyType/dicts/wanxiang
     public static let folderName = "dicts/wanxiang"
     public static let assetPrefix = "wowtype-data-wanxiang-"
     public static let assetSuffix = ".tar.gz"
@@ -39,29 +39,9 @@ public enum LexiconPack {
             .max { compareVersions($0.version, $1.version) < 0 }
     }
 
-    /// 版本比大小，和 Linux 的 parse_version 一样按数字段逐段比，前面都一样时段多的大
-    /// （2026.10.31.2 > 2026.10.31，1.0 > 1）。
+    /// 版本比大小（见 Shared/Version.swift）。
     public static func compareVersions(_ a: String, _ b: String) -> Int {
-        let x = versionParts(a), y = versionParts(b)
-        for i in 0..<min(x.count, y.count) where x[i] != y[i] {
-            return x[i] < y[i] ? -1 : 1
-        }
-        return x.count == y.count ? 0 : (x.count < y.count ? -1 : 1)
-    }
-
-    private static func versionParts(_ v: String) -> [Int] {
-        var parts: [Int] = []
-        var current: Int?
-        for s in v.unicodeScalars {
-            if let d = Int(String(s)), ("0"..."9").contains(s) {
-                current = (current ?? 0) * 10 + d
-            } else if let c = current {
-                parts.append(c)
-                current = nil
-            }
-        }
-        if let c = current { parts.append(c) }
-        return parts
+        Version.compare(a, b)
     }
 
     /// 从 SHA256SUMS 里取要的那些文件的校验值（小写）。重复或无效的条目整个不认（返回错误原因）。
@@ -91,7 +71,7 @@ public enum LexiconPack {
     /// 返回去掉 ./ 的名字；"." 这类目录本身是 ""（跳过）；不许的是 nil。
     public static func entryName(_ raw: String) -> String? {
         var name = raw
-        // 只去掉一层 ./（和 Linux 的 removeprefix 一样，././lexicon.tsv 不认）
+        // 只去掉一层 ./（和 旧版的 removeprefix 一样，././lexicon.tsv 不认）
         if name.hasPrefix("./") { name.removeFirst(2) }
         if name.isEmpty || name == "." { return "" }
         return files.contains(name) ? name : nil

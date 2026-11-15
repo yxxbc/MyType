@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""把 Rime 五笔 86 词库（rime-wubi 的 wubi86.dict.yaml）转成 WowType 的五笔表。
+"""把 Rime 五笔 86 词库（rime-wubi 的 wubi86.dict.yaml）转成 MyType 的五笔表。
 
 用法：
     python3 tools/wubi2tsv.py wubi86.dict.yaml > wubi86.tsv
@@ -84,7 +84,7 @@ def parse(path):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Rime 五笔 86 词库 -> WowType 五笔表")
+    ap = argparse.ArgumentParser(description="Rime 五笔 86 词库 -> MyType 五笔表")
     ap.add_argument("path", help="wubi86.dict.yaml")
     ap.add_argument("-o", "--output", help="输出文件（默认标准输出）")
     args = ap.parse_args()

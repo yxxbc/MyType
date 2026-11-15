@@ -76,7 +76,7 @@ def main():
             rows.append(f"{emoji}\t{'|'.join(words_zh)}\t{'|'.join(w.lower() for w in words_en)}")
 
     with open(dst, "w", encoding="utf-8") as f:
-        f.write("# WowType emoji 表，由 scripts/make-emoji.py 生成，别手改。\n")
+        f.write("# MyType emoji 表，由 scripts/make-emoji.py 生成，别手改。\n")
         f.write(f"# 来源：Unicode emoji-test.txt {version}、Unicode CLDR 注释（zh、en），只收 emoji 15.0 及以前。\n")
         f.write("# Copyright © 1991-2026 Unicode, Inc. Unicode License v3: https://www.unicode.org/license.txt\n")
         f.write("\n".join(rows) + "\n")

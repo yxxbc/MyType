@@ -1,17 +1,17 @@
 //! 运行时自检：确认词库、语言模型、简繁表、用户词等数据是否就位。
 //!
 //! ```
-//! wowtype-check [--lexicon path] [--lm tsv] [--arpa file] [--s2t tsv] [--user-dict tsv]
+//! mytype-check [--lexicon path] [--lm tsv] [--arpa file] [--s2t tsv] [--user-dict tsv]
 //! ```
 //!
-//! 默认读与插件相同的环境变量（WOWTYPE_LEXICON / WOWTYPE_LM / WOWTYPE_S2T / WOWTYPE_USER_DICT），
-//! 所以在 Linux 上装完后跑一遍就能知道配置有没有生效。
+//! 默认读与外壳相同的环境变量（MYTYPE_LEXICON / MYTYPE_LM / MYTYPE_S2T / MYTYPE_USER_DICT），
+//! 所以在 以前装完后跑一遍就能知道配置有没有生效。
 
 use std::path::Path;
 use std::sync::Arc;
 
-use wowtype_core::lm::{ArpaLm, BigramLm, LanguageModel};
-use wowtype_core::{Engine, Lexicon, MemoryLexicon, open_cached, symbols};
+use mytype_core::lm::{ArpaLm, BigramLm, LanguageModel};
+use mytype_core::{Engine, Lexicon, MemoryLexicon, open_cached, symbols};
 
 struct Report {
     ok: usize,
@@ -48,17 +48,35 @@ fn env_or(name: &str, default: &str) -> String {
         .unwrap_or_else(|| default.to_string())
 }
 
+/// 安装包里的数据（~/Library/Input Methods/MyType.app/Contents/Resources）。
+fn app_resource(name: &str) -> String {
+    match std::env::var_os("HOME") {
+        Some(home) => format!(
+            "{}/Library/Input Methods/MyType.app/Contents/Resources/{name}",
+            home.to_string_lossy()
+        ),
+        None => String::new(),
+    }
+}
+
+/// 用户数据目录（~/Library/Application Support/MyType）。
+fn data_file(name: &str) -> String {
+    match std::env::var_os("HOME") {
+        Some(home) => format!("{}/Library/Application Support/MyType/{name}", home.to_string_lossy()),
+        None => String::new(),
+    }
+}
+
 fn main() {
-    let mut lexicon = env_or("WOWTYPE_LEXICON", "/usr/share/wowtype/lexicon.tsv");
-    let default_lm = if Path::new("/usr/share/wowtype/words.lm").exists() {
-        "/usr/share/wowtype/words.lm"
-    } else {
-        ""
-    };
-    let mut lm = env_or("WOWTYPE_LM", default_lm);
-    let mut arpa = env_or("WOWTYPE_ARPA", "");
-    let mut s2t = env_or("WOWTYPE_S2T", "/usr/share/wowtype/s2t.tsv");
-    let mut user_dict = env_or("WOWTYPE_USER_DICT", "");
+    let lexicon_default = app_resource("lexicon.tsv");
+    let mut lexicon = env_or("MYTYPE_LEXICON", &lexicon_default);
+    let lm_default = app_resource("words.lm");
+    let default_lm = if Path::new(&lm_default).exists() { lm_default.as_str() } else { "" };
+    let mut lm = env_or("MYTYPE_LM", default_lm);
+    let mut arpa = env_or("MYTYPE_ARPA", "");
+    let s2t_default = app_resource("s2t.tsv");
+    let mut s2t = env_or("MYTYPE_S2T", &s2t_default);
+    let mut user_dict = env_or("MYTYPE_USER_DICT", "");
 
     let args: Vec<String> = std::env::args().collect();
     let mut i = 1;
@@ -74,7 +92,7 @@ fn main() {
             "--s2t" => s2t = take(&mut i),
             "--user-dict" => user_dict = take(&mut i),
             "-h" | "--help" => {
-                println!("wowtype-check [--lexicon path] [--lm tsv] [--arpa file] [--s2t tsv] [--user-dict tsv]");
+                println!("mytype-check [--lexicon path] [--lm tsv] [--arpa file] [--s2t tsv] [--user-dict tsv]");
                 return;
             }
             other => {
@@ -86,7 +104,7 @@ fn main() {
     }
 
     let mut report = Report::new();
-    println!("WowType 自检  (core {})", env!("CARGO_PKG_VERSION"));
+    println!("MyType 自检  (core {})", env!("CARGO_PKG_VERSION"));
 
     // 1. 词库（必需）
     println!("\n[词库] {lexicon}");
@@ -137,7 +155,7 @@ fn main() {
             }
         }
     } else if !lm.is_empty() {
-        match wowtype_core::lm::load_lm(&lm) {
+        match mytype_core::lm::load_lm(&lm) {
             Ok(v) => {
                 report.ok("语言模型", &format!("{lm}"));
                 v
@@ -170,7 +188,7 @@ fn main() {
     if user_dict.is_empty() {
         report.warn(
             "用户词库",
-            "未配置（可由插件自动使用 XDG_DATA_HOME/wowtype/user.tsv）",
+            &format!("未配置（可由外壳自动使用 {}）", data_file("user.tsv")),
         );
     } else if Path::new(&user_dict).exists() {
         match engine.load_user_dict(&user_dict) {
@@ -207,13 +225,13 @@ fn main() {
         );
     }
 
-    match wowtype_core::shuangpin::encode(wowtype_core::shuangpin::Scheme::Ziranma, "zhong").first()
+    match mytype_core::shuangpin::encode(mytype_core::shuangpin::Scheme::Ziranma, "zhong").first()
     {
         Some([a, b]) => report.ok("双拼", &format!("zhong -> {}{}", *a as char, *b as char)),
         None => report.fail("双拼", "zhong 无法编码"),
     }
 
-    let canon = wowtype_core::syllable::fuzzy_canon("zhang");
+    let canon = mytype_core::syllable::fuzzy_canon("zhang");
     if canon == "zan" {
         report.ok("模糊音", "zhang -> zan");
     } else {

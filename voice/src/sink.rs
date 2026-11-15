@@ -35,7 +35,7 @@ impl TextSink for StdoutSink {
 
 /// 通过命令行工具注入按键的通用后端。
 ///
-/// Linux 上：
+/// 以前：
 /// - X11 用 xdotool / xvkbd
 /// - Wayland 用 wtype（wlroots 系）或 ydotool（uinput，需要守护进程）
 #[derive(Debug)]
@@ -91,7 +91,7 @@ mod tests {
 
     #[test]
     fn clipboard_sink_feeds_copy_command() {
-        let path = std::env::temp_dir().join(format!("wowtype_clip_{}.txt", std::process::id()));
+        let path = std::env::temp_dir().join(format!("mytype_clip_{}.txt", std::process::id()));
         let _ = std::fs::remove_file(&path);
         let mut sink = ClipboardSink {
             copy_cmd: vec![

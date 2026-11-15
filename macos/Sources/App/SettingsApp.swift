@@ -1,7 +1,7 @@
-// 设置窗口：同一个安装包，另起一个进程（MyType --settings [页面]），像 Linux 上单独的 wowtype-config。
+// 设置窗口：同一个安装包，另起一个进程（MyType --settings [页面]），像 以前单独的 mytype-config。
 //
 // 不放在输入法进程里开窗口：输入法自己进程里的输入框用不了自己（加自定义词要打中文），
-// 窗口出了问题也不会带倒输入法。设置窗口只写 wowtype.conf / custom.tsv，输入法下一次按键时自己重新读。
+// 窗口出了问题也不会带倒输入法。设置窗口只写 mytype.conf / custom.tsv，输入法下一次按键时自己重新读。
 
 import AppKit
 import SwiftUI
@@ -26,8 +26,8 @@ enum SettingsApp {
         config.createsNewApplicationInstance = true
         config.activates = true
         config.arguments = ["--settings"] + (page.map { [$0.rawValue] } ?? [])
-        if let dir = ProcessInfo.processInfo.environment["WOWTYPE_DATA_DIR"], !dir.isEmpty {
-            config.environment = ["WOWTYPE_DATA_DIR": dir]
+        if let dir = ProcessInfo.processInfo.environment["MYTYPE_DATA_DIR"], !dir.isEmpty {
+            config.environment = ["MYTYPE_DATA_DIR": dir]
         }
         NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: config) { _, error in
             if let error {
@@ -166,16 +166,10 @@ final class SettingsAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
     }
 
     @objc private func showAbout() {
-        let credits = NSAttributedString(
-            string: "好用的拼音输入法：整句、简拼、按错键纠正。\n代码按 MIT 或 Apache-2.0 双许可证发布。\n词库数据来自 rime-ice（GPL-3.0）。",
-            attributes: [.font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
-                         .foregroundColor: NSColor.secondaryLabelColor])
-        NSApp.orderFrontStandardAboutPanel(options: [
-            .applicationName: "MyType",
-            .applicationVersion: appVersion,
-            .version: "",
-            .credits: credits,
-        ])
+        // 关于页在设置窗口里（版本、检查更新、许可），不再弹系统的关于面板
+        model.page = .about
+        window.deminiaturize(nil)
+        window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 

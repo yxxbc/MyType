@@ -121,9 +121,9 @@ key = absl::StrCat(上下文文本, 候选文本)   // 直接拼，无分隔符
 - 验证：Rust 实现和 LiteRT 的输出差 < 2e-5。`我今天很开心` = −15.28，`我今天很开薪` = −35.95。一步约 4M 次乘加，单核约 1ms。
 - `decgnr.bin`（12 层、768 维、词表 10496 的 WordPiece 模型）更大，逐键跑太重，没接。
 
-### 3.2 WowType 自己的词级语言模型 `words.lm`（`core/src/wordlm.rs`）
+### 3.2 MyType 自己的词级语言模型 `words.lm`（`core/src/wordlm.rs`）
 
-lmcnmac.bin 导不出来（§3），所以自己从语料训练。`wowtype-lmbuild`：
+lmcnmac.bin 导不出来（§3），所以自己从语料训练。`mytype-lmbuild`：
 
 1. 繁体按 `s2t.tsv` 反查转简体；只看汉字，其余字符断开。句号、问号、叹号、分号和行首算句首（前一个词是 `<s>`）。
 2. 每段汉字用词库分词：取 ∏ P(词) 最大的切法（词频来自 lexicon.tsv，一个词最多 8 字），词库里没有的字打断搭配。
@@ -148,7 +148,7 @@ lmcnmac.bin 导不出来（§3），所以自己从语料训练。`wowtype-lmbui
 
 日常句和热词表（`data/hotwords.tsv`）是同一时间写的，热词带来的那 3 个点有自评成分。
 
-安装包里自带 400 万搭配的那份（`/usr/share/wowtype/words.lm`，CC BY-SA 4.0；0.3.3 及以前在单独的词库包 `2026.10.31.2` 里），
+安装包里自带 400 万搭配的那份（`/usr/share/mytype/words.lm`，CC BY-SA 4.0；0.3.3 及以前在单独的词库包 `2026.10.31.2` 里），
 `scripts/make-data.sh` 从 [Release lm-2026.11.09](https://github.com/Gloridust/WowType/releases/tag/lm-2026.11.09)
 下载并核对 sha256。不带 NNLM 时（安装包用户的情况）日常句 84.8%、维基句 60.2%，逐键平均约 1.9 ms，和不带它时一样。
 
@@ -163,15 +163,15 @@ lmcnmac.bin 导不出来（§3），所以自己从语料训练。`wowtype-lmbui
   封顶后是 104 万。
 - 重新生成：`scripts/make-tatoeba-freq.sh`（下载钉死的导出、核对 sha256、用钉死版本的 jieba 和 opencc 分词转简）；
   `scripts/make-tatoeba-freq.sh --check` 核对仓库里的表能逐字节重新生成（不进默认构建，要装 `tools/requirements-data.txt`）。
-- 不融：`WOWTYPE_NO_CORPUS_FREQ=1`，或者删掉 `data/tatoeba-freq.tsv`。
-- 换本机语料现挖：`WOWTYPE_CORPUS="a.txt b.txt.bz2"`（要 jieba），必须用 `WOWTYPE_CORPUS_LICENSE` 写清来源和许可证；
-  一行一句，带 TAB 的用 `WOWTYPE_CORPUS_COLUMN` 指定列，繁体加 `WOWTYPE_CORPUS_T2S=1`，权重 `WOWTYPE_CORPUS_WEIGHT`。
+- 不融：`MYTYPE_NO_CORPUS_FREQ=1`，或者删掉 `data/tatoeba-freq.tsv`。
+- 换本机语料现挖：`MYTYPE_CORPUS="a.txt b.txt.bz2"`（要 jieba），必须用 `MYTYPE_CORPUS_LICENSE` 写清来源和许可证；
+  一行一句，带 TAB 的用 `MYTYPE_CORPUS_COLUMN` 指定列，繁体加 `MYTYPE_CORPUS_T2S=1`，权重 `MYTYPE_CORPUS_WEIGHT`。
   SOURCE.txt 里只记文件名和 sha256，不记路径。
 - Python 包：`python3 -m pip install --require-hashes -r tools/requirements-data.txt`（版本、哈希钉死；
   脚本会核对已装的版本，分词和繁转简随版本变）。
 - 语料词频在合热词表之前做：`data/rime-ice-freq.tsv`（只提不降）和 `data/blocklist.tsv` 最后套，不会被冲掉。
 - 署名：SOURCE.txt 正文、deb 的 copyright、README 的致谢和许可证、发版说明。所有安装包都带 SOURCE.txt
-  （deb/rpm/Arch 装成 `/usr/share/doc/wowtype/DATA-SOURCE.txt`，macOS 在 Resources 里，数据压缩包和 Nix 也有）。
+  （deb/rpm/Arch 装成 `/usr/share/doc/mytype/DATA-SOURCE.txt`，macOS 在 Resources 里，数据压缩包和 Nix 也有）。
 
 工具（`tools/`）：`lexdata.py` 是共用的读写规则，`blend-freq.py` 融合词频，`mine_corpus_freq.py` 从语料挖词频。几条规则：
 
@@ -181,7 +181,7 @@ lmcnmac.bin 导不出来（§3），所以自己从语料训练。`wowtype-lmbui
 - 按词融合，不按行：多音词各读音的频次之和当这个词的频次，融合后按原比例分回各读音，
   换算系数也按词算（按行算的话，多音词的次数会给每个读音各加一遍，在换算系数里也重复算）。
 
-#### 评测（2026-11-14，本机 macOS，release 构建，`wowtype-eval --lm words.lm`）
+#### 评测（2026-11-14，本机 macOS，release 构建，`mytype-eval --lm words.lm`）
 
 用例（都不提交）：
 
@@ -203,12 +203,11 @@ lmcnmac.bin 导不出来（§3），所以自己从语料训练。`wowtype-lmbui
 | 语料词频（发布的融法） | **1864 (62.1%)** / 2066 (68.9%)，+103 -33 | **1905 (63.5%)** / 2104 (70.1%)，+92 -30 | **123 (89.1%)** / 129 (93.5%)，+4 -0 | 473 (88.7%) / 521 (97.7%)，+2 -1 |
 | 同上，不封顶 | 1862 (62.1%) / 2067 (68.9%)，+104 -36 | 1905 (63.5%) / 2104 (70.1%)，+93 -31 | 123 / 129，+4 -0 | 473 / 521，+2 -1 |
 
-短输入（`wowtype-show --english --lm --max 18`，和插件一样，#156）：融了语料词频之后 d、l、b、ma、shi、ni、wo、zai、bu、de、le
+短输入（`mytype-show --english --lm --max 18`，和输入法一样，#156）：融了语料词频之后 d、l、b、ma、shi、ni、wo、zai、bu、de、le
 的 18 个候选和基线完全一样；xz、nh、shim 第 3~9 个有调换（xz 第 5 个多了「鞋子」，nh 第 9 个多了「女孩」），首选不变，
 `xz` 仍是「现在」（`data/rime-ice-freq.tsv` 修的那条）。
-fcitx5 按键测试里依赖词库的输入（nihao、zhongdi、kyi、yongzwen、kaixin、jixu……）首选也不变；
-`macos/test.sh`（`WOWTYPE_EXPECT_FULL_CHARS=1`）和 Ubuntu 24.04 容器里的 fcitx5 按键测试（`scripts/addon-test.sh`）
-用默认构建的词库跑通过。
+按键测试里依赖词库的输入（nihao、zhongdi、kyi、yongzwen、kaixin、jixu……）首选也不变；
+`macos/test.sh`（`MYTYPE_EXPECT_FULL_CHARS=1`）和 `macos/ShellTests/run.sh` 用默认构建的词库跑通过。
 
 试过、没采用的：
 
@@ -218,7 +217,7 @@ fcitx5 按键测试里依赖词库的输入（nihao、zhongdi、kyi、yongzwen�
 - 语料权重 0.15 / 0.5（含单字时）：Tatoeba A 1910 / 1923，日常句 124 / 123，0.3（125）最好。
 - 可选数据源 jieba（jieba 词典调词频，再补 pypinyin 注音的新词）、cedict（CC-CEDICT 补词，频次给 10）：Tatoeba A
   +35 -35 / +0 -0，日常句 -1 / 不变；新词的首选却变了一大片（jieba 5848 个拼音里 2880 个、cedict 1379 个），jieba 新词约一成是碎片。
-  jieba 换权重（0.15 / 0.5）、cedict 频次给 100 也没有一组三项都不掉，所以连代码一起删了（`WOWTYPE_DATA_EXTRAS`，最后一版在 81571e2）。
+  jieba 换权重（0.15 / 0.5）、cedict 频次给 100 也没有一组三项都不掉，所以连代码一起删了（`MYTYPE_DATA_EXTRAS`，最后一版在 81571e2）。
 - 语料封顶（只在 A 组、日常句、上下文上挑，B 组只在定下来以后跑一次）：倍数 3 / 4 / 10 / 20 / 30（下限 1000）时
   A 组 1887 / 1894 / 1896 / 1905 / 1904，不封顶 1905；下限 100、10000（10 倍）时 1896、1899。
   20 倍是 A 组上不掉分的最紧的一档：评测那份封顶 56 个词，发布那份（全部句子）57 个。
@@ -232,5 +231,4 @@ jieba 切出来的碎片也会抬（「道菜」1 → 13114，`daocai` 的首选
 
 可复现：`data/tatoeba-freq.tsv` 在仓库里，默认构建只用标准库、不联网，同样的 rime-ice 跑两遍逐字节相同。
 这张表本身钉的是 Internet Archive 上的 `cmn_sentences.tsv.bz2`（2026-11-05 导出，sha256 `d603c1b9…91743`，
-地址和完整 sha256 在表头和 `scripts/make-tatoeba-freq.sh` 里）；`--check` 在 macOS（两个 venv）和 Ubuntu 24.04 容器里
-都逐字节重现了它。词库包版本 = rime-ice 日期 + REV 5（4 → 5 因为默认词库变了）。
+地址和完整 sha256 在表头和 `scripts/make-tatoeba-freq.sh` 里）；`--check` 在 macOS 上（两个 venv）逐字节重现了它。词库包版本 = rime-ice 日期 + REV 5（4 → 5 因为默认词库变了）。

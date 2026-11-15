@@ -1,7 +1,7 @@
 //! 逐键输入探针：模拟一个字母一个字母打，看目标词在每个前缀位置是否还在候选里。
 //!
 //! ```
-//! wowtype-probe --lexicon lexicon.tsv --cases cases.tsv [--max 10]
+//! mytype-probe --lexicon lexicon.tsv --cases cases.tsv [--max 10]
 //! ```
 //!
 //! cases.tsv 是 `拼音<TAB>词`。对每个用例从第 2 个字母开始逐位截断，
@@ -11,8 +11,8 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use wowtype_core::lm::BigramLm;
-use wowtype_core::{open_cached, Engine, EngineConfig, Lexicon};
+use mytype_core::lm::BigramLm;
+use mytype_core::{open_cached, Engine, EngineConfig, Lexicon};
 
 fn fail(msg: &str) -> ! {
     eprintln!("{msg}");
@@ -38,7 +38,7 @@ fn main() {
             "--max" => max_candidates = take(&mut i).parse().unwrap_or(10),
             "--show" => worst_show = take(&mut i).parse().unwrap_or(10),
             "-h" | "--help" => {
-                println!("wowtype-probe --lexicon <tsv> --cases <tsv> [--max n] [--show n]");
+                println!("mytype-probe --lexicon <tsv> --cases <tsv> [--max n] [--show n]");
                 return;
             }
             other => fail(&format!("未知参数: {other}")),

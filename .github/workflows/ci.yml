@@ -37,6 +37,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: 核心单元测试
-        run: cargo test --release --locked -p wowtype-core --lib
+        run: cargo test --release --locked -p mytype-core --lib
       - name: macOS 外壳测试（不依赖词库数据，用例自己造小词库）
         run: macos/test.sh

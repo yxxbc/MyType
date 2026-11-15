@@ -1,6 +1,6 @@
 # 引擎细节、评测与调参
 
-这里是 WowType 拼音引擎的实现说明和实测数字，原先放在 README 里。
+这里是 MyType 拼音引擎的实现说明和实测数字，原先放在 README 里。
 怎么安装、怎么用见 [README](../README.md)；接手开发先看 [HANDOFF.md](HANDOFF.md)。
 
 ## 词库从哪来
@@ -11,7 +11,7 @@ WeType 自己的词库格式还在解析（见下）。在那之前可以直接�
 # 雾凇拼音：https://github.com/iDvel/rime-ice
 # 会自动顺着 import_tables 递归合并被引用的词库（rime-ice 的条目都在被引用文件里）
 python3 tools/rime2tsv.py rime_ice.dict.yaml > lexicon.tsv
-cargo run -p wowtype-core --bin wowtype-demo -- --lexicon lexicon.tsv nihao
+cargo run -p mytype-core --bin mytype-demo -- --lexicon lexicon.tsv nihao
 ```
 
 `scripts/make-data.sh` 还会用 `--extra-chars cn_dicts/41448.dict.yaml` 补雾凇的大字表（雾凇默认没引入）：
@@ -24,9 +24,9 @@ cargo run -p wowtype-core --bin wowtype-demo -- --lexicon lexicon.tsv nihao
 引擎支持**半成品输入**：尾部还没成音节时会自动补全（`nih` → 你好，`zhongg` → 中国），
 不会出现"打到一半没有候选"。
 
-支持**模糊音**（默认关闭）：`--fuzzy`（插件里在设置界面打开，或 `WOWTYPE_FUZZY=1`）开启后，
+支持**模糊音**（默认关闭）：`--fuzzy`（在设置界面打开）开启后，
 `zidao` → 知道（zh/z）、`sangdian` → 商店（ang/an）。一共 16 组，可以分别开关
-（`Engine::set_fuzzy_groups` / `wowtype_engine_set_fuzzy_groups`，位掩码见 `syllable::fuzzy`）：
+（`Engine::set_fuzzy_groups` / `mytype_engine_set_fuzzy_groups`，位掩码见 `syllable::fuzzy`）：
 z=zh、c=ch、s=sh、n=l、f=h、r=l、an=ang、en=eng、in=ing、ian=iang、uan=uang、un=ong，默认开平翘舌和前后鼻音这 8 组；
 un=ong 和后加的 an=ai、huang=wang、un=iong（jun=jiong、yun=yong）、eng=ong 默认关（后四组微信输入法也有）。
 两个音节算相同：声母最多换一步、韵母最多换一步，另外可以整个音节换一次（huang=wang 只能这么表达）。
@@ -40,11 +40,11 @@ n=l、r=l 都开着 n 也不等于 r，an=ai、an=ang 都开着 ai 也不等于 
 差不多常用时精确读音在前。
 
 支持**日期时间**、**计算器**（`core/src/datetime.rs`、`core/src/calc.rs`）：
-- `wowtype_datetime_candidates(key, 年, 月, 日, 时, 分, 秒, 星期)`：key 是 `riqi`、`rq`、`shijian`、`sj`、`xingqi`、`date`、`time`
-  （不认 `rq`、`sj` 这类简拼）时给出几种写法；当前时间由插件按本地时区传进来。插件把它们插在首选后面，
+- `mytype_datetime_candidates(key, 年, 月, 日, 时, 分, 秒, 星期)`：key 是 `riqi`、`rq`、`shijian`、`sj`、`xingqi`、`date`、`time`
+  （不认 `rq`、`sj` 这类简拼）时给出几种写法；当前时间由输入法按本地时区传进来。输入法把它们插在首选后面，
   选中时原样上屏、不学习。双拼下用首选的拼音判断。
-- `wowtype_calc_candidates(算式)`：`+ - * / % ^`、括号、小数；算得出来给「结果」「算式=结果」，没写完只给算式。
-  插件里全拼时以 `v` 开头打（`v1+2*3`），`v` 之后的数字、运算符进编辑区，空格或 `=` 上屏结果。
+- `mytype_calc_candidates(算式)`：`+ - * / % ^`、括号、小数；算得出来给「结果」「算式=结果」，没写完只给算式。
+  输入法里全拼时以 `v` 开头打（`v1+2*3`），`v` 之后的数字、运算符进编辑区，空格或 `=` 上屏结果。
   `v` 后面只有一个数时，候选是人民币大写金额、中文数字和数字本身（`calc::rmb_upper`、`calc::chinese_number`，整数到千亿、金额到分）；算式结果是金额时附上大写。
 
 支持**自动学习**：同一个词选够 3 次（可配置）后自动收进用户词库，之后能直接打出来。
@@ -58,39 +58,39 @@ n=l、r=l 都开着 n 也不等于 r，an=ai、an=ang 都开着 ai 也不等于 
 不然旧的 `user.tsv` 留着，重启又回来。
 
 支持**自定义词**：用户在设置界面里加的词存在 `custom.tsv`（`编码<TAB>词[<TAB>频次]`，拼音可以不分音节），
-插件经 `wowtype_engine_load_custom_words(engine, path)` 载入，每次载入整体替换上一次的，文件不存在就清空，
+输入法经 `mytype_engine_load_custom_words(engine, path)` 载入，每次载入整体替换上一次的，文件不存在就清空，
 不写回用户词库。自定义词全拼和简拼都排第一（加了「字节跳动」后 `zjtd` 第一个就是它）。
 编码不是拼音但全是字母的（`mail`）单独存一张表，整个输入正好等于它时放在最前面。
 词里的 `\n`、`\t` 在词库里保持转义（词库是一行一条的 TSV），`try_input` 最后才换成真的换行、制表符。
 
 支持 **emoji 和符号**（`core/src/emoji.rs`、`core/src/symbols.rs`）：
-- 打字时推荐：`wowtype_emoji_recommend(首选候选)`，整个词或句尾两个字以上的词对上 emoji 就给一个，
-  插件插在第三个候选。词表是 `core/src/emoji/zh-extra.tsv`（手工整理的聊天常用词）加上
+- 打字时推荐：`mytype_emoji_recommend(首选候选)`，整个词或句尾两个字以上的词对上 emoji 就给一个，
+  输入法插在第三个候选。词表是 `core/src/emoji/zh-extra.tsv`（手工整理的聊天常用词）加上
   `core/src/emoji/cldr.tsv` 里够具体的关键词（一个关键词对应不超过 3 个 emoji；「脸」「手」这种不算）。
-- 表情面板：`wowtype_engine_emoji_search(engine, query)`。拼音先经引擎转成前几个中文候选，再按 CLDR 中文关键词找；
+- 表情面板：`mytype_engine_emoji_search(engine, query)`。拼音先经引擎转成前几个中文候选，再按 CLDR 中文关键词找；
   同时按英文关键词前缀、符号名（`juhao` → 。）找。`cldr.tsv` 由 `scripts/make-emoji.py` 从 Unicode CLDR 生成，
   只收 emoji 15.0 及以前的（新的系统字体可能还画不出来）。
 ASCII 标点会自动转成中文标点（`,` → ，`?` → ？），数字后面的符号不换，如 `3.14`、`20:22`、`3,000`（`symbols::punct`；标点样式选半角时一律原样）；`/` 等没收录的原样交给应用。
 
-支持**繁体输出**：`--traditional`（插件在设置界面打开，或 `WOWTYPE_TRADITIONAL=1`），需要简繁映射表
+支持**繁体输出**：`--traditional`（在设置界面打开），需要简繁映射表
 `--s2t core/data/s2t.tsv`。仓库里的表由 `tools/opencc2tsv.py` 从 OpenCC 数据生成（Apache-2.0，
 版本写在表头），收了 OpenCC 的字符表和整张词组表（STPhrases）：从左到右词组最长匹配优先，
 其余逐字转换，和 OpenCC 自己的切法一样，「头发 -> 頭髮」「干净 -> 乾淨」「皇后 -> 皇后」都能转对。
 表约 1 MB，开繁体时才载入（约 10 ms，峰值内存多 9 MB 左右）。
 
 英文/未登录串会把原始输入本身作为候选（保留大小写）：`hello` → `hello`，
-纯拼音输入被完整覆盖时不会插入原始串。加载英文词表（`--english`，插件放
-`~/.local/share/wowtype/english.txt`）后，认识的英文词会按词表里的写法给出
+纯拼音输入被完整覆盖时不会插入原始串。加载英文词表（`--english`，输入法放
+`~/.local/share/mytype/english.txt`）后，认识的英文词会按词表里的写法给出
 （`github` → GitHub），并排在纠错出来的中文前面；本身就是合法拼音的（`she`、`fan`）排第 6，
 前 5 个留给中文。
 词表直接用 rime-ice 的英文词典：
 
     cat rime-ice/en_dicts/en.dict.yaml rime-ice/en_dicts/en_ext.dict.yaml \
-        > ~/.local/share/wowtype/english.txt
+        > ~/.local/share/mytype/english.txt
 
 支持**双拼**（默认关闭）：自然码、小鹤、微软、搜狗、智能 ABC、紫光、拼音加加 7 种方案，
 键位和零声母规则按 rime 的方案文件逐个核对过（每种方案全部音节编码、解码往返一致）。
-`demo --scheme xiaohe`（插件在设置界面选，或 `WOWTYPE_SHUANGPIN_SCHEME=xiaohe`）。
+`demo --scheme xiaohe`（在设置界面选）。
 双拼先解码成带隔音符的全拼（`vsgo` → `zhong'guo`），再走全拼的整套流程：整句、句首词、分段选词、
 语言模型都一样，候选的 `consumed` 再换算回按键个数；末尾单个键当声母（`vsg` → 中国）。
 重叠码（如自然码的 `jp`）会展开成多种全拼，其余写法的整段候选排在后面。双拼下不做按错键纠正。
@@ -123,7 +123,7 @@ WeType 自己的 `lmcnmac.bin` 因为只存哈希、无法导出，见 [docs/DAT
 
 ```bash
 # 用例格式：输入<TAB>期望（多个可接受答案用 | 分隔）
-cargo run --release -p wowtype-core --bin wowtype-eval -- \
+cargo run --release -p mytype-core --bin mytype-eval -- \
     --lexicon rime.tsv --eval cases.tsv \
     --weights coverage_score=1.5,prob=0,history_count=0.3
 ```
@@ -155,8 +155,8 @@ python3 tools/make_eval.py rime.tsv --jianpin                   # 换成简拼
 实测上下文消歧：
 
 ```bash
-wowtype-demo --lexicon lex.tsv --lm lm.tsv xian              # 1. 先
-wowtype-demo --lexicon lex.tsv --lm lm.tsv --context 我 xian  # 1. 西安
+mytype-demo --lexicon lex.tsv --lm lm.tsv xian              # 1. 先
+mytype-demo --lexicon lex.tsv --lm lm.tsv --context 我 xian  # 1. 西安
 ```
 
 `tools/make_bigram.py` 能从词库反推字二元（`事->情` 这类词内搭配），但它**不能替代真实语料**：
@@ -180,8 +180,8 @@ wowtype-demo --lexicon lex.tsv --lm lm.tsv --context 我 xian  # 1. 西安
 这样上下文才有机会真正影响结果。例子（词库里「先」远高于「西安」）：
 
 ```bash
-wowtype-demo --lexicon lex.tsv --lm lm.tsv xian            # 1. 先
-wowtype-demo --lexicon lex.tsv --lm lm.tsv --context 我 xian  # 1. 西安
+mytype-demo --lexicon lex.tsv --lm lm.tsv xian            # 1. 先
+mytype-demo --lexicon lex.tsv --lm lm.tsv --context 我 xian  # 1. 西安
 ```
 
 改完后在真实词库上回归验证：rank1 top1 100%、rank2/3 的 top10 100%、长输入 top1 100%，均无下降。
@@ -191,11 +191,11 @@ wowtype-demo --lexicon lex.tsv --lm lm.tsv --context 我 xian  # 1. 西安
 有一批「输入 → 我实际想要的词」的标注后，可以直接拟合权重（softmax 交叉熵 + L2）：
 
 ```bash
-cargo run --release -p wowtype-core --bin wowtype-train -- \
+cargo run --release -p mytype-core --bin mytype-train -- \
     --lexicon rime.tsv --cases cases.tsv --epochs 300 --out weights.txt
 ```
 
-输出可以直接喂给 `wowtype-eval --weights`。
+输出可以直接喂给 `mytype-eval --weights`。
 
 实测结论要说清楚：
 - **特征能区分的场景**（例如「先」vs「西安」，分词特征 `kind` 不同）训练有效，0% → 100%
@@ -206,9 +206,9 @@ cargo run --release -p wowtype-core --bin wowtype-train -- \
 
 还有两个辅助工具：
 
-- `wowtype-probe`：逐键输入探针，从第 2 个字母开始逐位截断，看目标词在每一步是否还在候选里。
+- `mytype-probe`：逐键输入探针，从第 2 个字母开始逐位截断，看目标词在每一步是否还在候选里。
   它靠「出现过又消失」这个信号抓到了补全的 bug（见下）。
-- `wowtype-bench`：真实词库下的载入耗时与逐键延迟。
+- `mytype-bench`：真实词库下的载入耗时与逐键延迟。
 配合 `--fuzzy` / `--shuangpin` / `--arpa` 可以对比不同配置。仓库里的
 `core/data/eval_sample.tsv` 只是演示用的 13 条。
 
@@ -245,7 +245,7 @@ cargo run --release -p wowtype-core --bin wowtype-train -- \
 句首词只在音节边界上切（单音节 `dan` 不会出「大」），4 个音节以上的输入里第二位放整句开头
 最长的那段（我今天晚上要加班 → 我今天晚上），短输入里最多 3 个、放在最后，总数不超过候选上限。
 
-实测（rime-ice 55 万词库 + 英文词表，`wowtype-eval`，各组几百例）：
+实测（rime-ice 55 万词库 + 英文词表，`mytype-eval`，各组几百例）：
 
 | 场景 | 改前 top1 / top3 | 改后 top1 / top3 |
 |---|---|---|
@@ -263,16 +263,16 @@ cargo run --release -p wowtype-core --bin wowtype-train -- \
 | 截断 1 个字母，中低频词 | 89.8 / 97.5% | 89.0 / 97.0% |
 | 简拼 | 94.3 / 94.3% | 94.3 / 94.3% |
 
-「改前」是 main 分支。每组几百例，用 `wowtype-eval` 跑，中低频那组用
+「改前」是 main 分支。每组几百例，用 `mytype-eval` 跑，中低频那组用
 `tools/make_eval.py --skip 30000 --top 300000` 生成——只测前 5000 个常用词时
 「zhongdi 出重点」这类问题根本看不出来。
 
 漏按最难：少一个字母时可能正好是另一个合法拼音，很多时候没法判断。
-逐键延迟 p99 约 10–13 ms（全量词库，含纠错和句首词；当时的测量，条件见下面[性能](#性能)一节的逐键表）。纠错可以在设置界面关掉（或 `WOWTYPE_TYPO=0`）。
+逐键延迟 p99 约 10–13 ms（全量词库，含纠错和句首词；当时的测量，条件见下面[性能](#性能)一节的逐键表）。纠错可以在设置界面关掉（在设置界面关掉）。
 
 简拼的质量单测：`--jianpin` 生成只取首字母的用例，300 例 **top1 95.3%**。
 
-逐键输入用 `wowtype-probe` 检查：从第 2 个字母开始逐位截断，统计目标词是否还在候选里。
+逐键输入用 `mytype-probe` 检查：从第 2 个字母开始逐位截断，统计目标词是否还在候选里。
 它抓过一个真 bug——补全把未完成的尾巴当成了合法前缀（`shesh` 被当成能解析的 head），
 导致 `设施` 从来没被补出来。修好后「出现过又消失」的用例为 **0**。
 
@@ -325,7 +325,7 @@ cargo run --release -p wowtype-core --bin wowtype-train -- \
 `FirstUserCandidateRankerProcessor`、`SingleUserWordCanbeSecond`、`history_hot_val`、
 `context_bigram_score`），只借思路，不用它的词库和模型。
 
-**候选横排**（设置界面里可改竖排，或 `WOWTYPE_VERTICAL=1`）。横排时左右键移动、上键翻页，下键展开成 6 列的候选面板（照微信输入法；fcitx5 的候选框只能画一行或一列，所以面板是竖排列表、每项一行 6 个词，用全角字符对齐，光标处的词用〔〕框起来）。
+**候选横排**（设置界面里可改竖排）。横排时左右键移动、上键翻页，下键展开成 6 列的候选面板（照微信输入法，用全角字符对齐，光标处的词用〔〕框起来）。
 
 **候选组成**：整句只留几个，后面是词，再后面是单字——
 
@@ -335,7 +335,7 @@ cargo run --release -p wowtype-core --bin wowtype-train -- \
 - 再往后是句首候选：整句去掉最后一个词（横向候选词 -> 横向…；我今天晚上要加班 -> 我今天晚上要），
   然后是从输入开头起的词，长的在前，最后最多 6 个单字。
 
-**学用户的习惯**（存在 `~/.local/share/wowtype/history.tsv`，和用户词库放一起，重启不丢）：
+**学用户的习惯**（存在 `~/.local/share/mytype/history.tsv`，和用户词库放一起，重启不丢）：
 
 - 热度：每选一次加 1，30 天减半。排序用 ln(1+热度)。
   以前的历史特征按「距今秒数」扣分，一小时前选过的词反而排在没选过的后面，已经去掉。
@@ -343,7 +343,7 @@ cargo run --release -p wowtype-core --bin wowtype-train -- \
 - 词搭配：上屏时记下「上一个词 -> 这个词」，包括一段一段选出来的整句（我们 -> 再 -> 讨论），
   以及上一次上屏的最后一个词 -> 这次的第一个词。束搜索给学过的搭配加分（用过一次约 +1.7）。
 
-`wowtype-eval --learn` 先把每个用例按插件里的选法「打一遍、上屏正确答案」再测，
+`mytype-eval --learn` 先把每个用例按输入法里的选法「打一遍、上屏正确答案」再测，
 `--learn-from <文件>` 用另一组用例学，看学了一组会不会把别的组带坏。40 句日常句子：
 
 | | 不学 | 学一遍以后 |
@@ -355,23 +355,14 @@ cargo run --release -p wowtype-core --bin wowtype-train -- \
 
 还差的是真正的语言模型：没用过的搭配（祝你/祝您、在/再）只能靠词频，要用语料训练词级 bigram 才能解决。
 
-`wowtype-show --lexicon lexicon.tsv --english english.txt 拼音...` 按插件的配置打印候选，
+`mytype-show --lexicon lexicon.tsv --english english.txt 拼音...` 按输入法的配置打印候选，
 每个候选标出是整句、词、句首候选还是原始串。
 
 ## 性能
 
-逐键延迟（`wowtype-bench --typing`，#43 的 4 条用例共 50 次按键；i5-13490F、Linux、release、rime-ice 891,526 词，2026-11）：
+逐键延迟（`mytype-bench --typing`，#43 的 4 条用例共 50 次按键；Apple M3、macOS、release、雾凇 929,380 词，2026-11-13）：
 
-| `--max`（候选上限，输入法里是 300） | words.lm | 均值 | p95 | p99 |
-|---|---|---|---|---|
-| 18 | 不带 | 2.70 ms | 6.08 ms | 6.11 ms |
-| 300 | 不带 | 2.81 ms | 5.91 ms | 6.34 ms |
-| 18 | 带 | 2.95 ms | 6.37 ms | 7.21 ms |
-| 300 | 带 | 3.36 ms | 7.30 ms | 7.53 ms |
-
-同样的用例在 Apple M3（macOS，release，pre-release 分支，雾凇 929,380 词，2026-11-13）上重测。两个外壳现在的上限是 1000：
-
-| `--max` | words.lm | 均值 | p95 | p99 | 最慢 |
+| `--max`（候选上限，输入法里是 1000） | words.lm | 均值 | p95 | p99 | 最慢 |
 |---|---|---|---|---|---|
 | 18 | 不带 | 1.9–2.4 ms | 3.8–4.4 ms | 4.3–4.5 ms | 9 ms（第一个键，冷启动） |
 | 300 | 不带 | 2.09 ms | 4.22 ms | 4.53 ms | 5.00 ms |
@@ -380,11 +371,12 @@ cargo run --release -p wowtype-core --bin wowtype-train -- \
 | 300 | 带 | 2.28 ms | 4.81 ms | 5.20 ms | 5.62 ms |
 | 1000 | 带 | 2.58 ms | 5.43 ms | 5.96 ms | 6.06 ms |
 
+
 最慢的都是 20 个字母的长句（xiangquzijieshangban）。上限从 18 加到 1000，p95 只多 1 ms 左右。
 #43 在 M2 上测到的「300 比 18 慢两倍多、长句单键 25–45 ms」在这里看不到，所以先不做「先算一页、翻页再补」。
 上面都是模糊音关着（只有兜底）；开着测加 `--fuzzy 0x7C7`（默认的 8 组）或 `--fuzzy 0xFFFF`（全部 16 组）。
 
-合成 10 万条词库压测（`cargo run --release -p wowtype-core --bin wowtype-bench`，M 系列 Mac）：
+合成 10 万条词库压测（`cargo run --release -p mytype-core --bin mytype-bench`，M 系列 Mac）：
 
 | 输入 | 耗时 |
 |---|---|
@@ -400,7 +392,7 @@ cargo run --release -p wowtype-core --bin wowtype-train -- \
 
 词库加载会自动生成二进制快照（`lexicon.tsv.wcache`）：按「源文件大小 + mtime + 格式版本」
 校验，词库更新后自动重建。词库在只读目录（如 `/usr/share`）时快照落到
-`$XDG_CACHE_HOME/wowtype/`（默认 `~/.cache/wowtype/`）。
+`$XDG_CACHE_HOME/mytype/`（默认 `~/.cache/mytype/`）。
 
 交互预算（<10ms）有很大余量。模糊音索引是**惰性构建**的（模糊音默认关闭），
 55 万词库下省掉了约 45% 的加载时间；代价是第一次用模糊音时多一次建表。

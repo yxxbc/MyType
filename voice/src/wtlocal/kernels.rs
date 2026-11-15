@@ -114,7 +114,7 @@ enum X86 {
 fn x86_level() -> X86 {
     static F: std::sync::OnceLock<X86> = std::sync::OnceLock::new();
     *F.get_or_init(|| {
-        if std::env::var_os("WOWTYPE_NO_VNNI").is_none()
+        if std::env::var_os("MYTYPE_NO_VNNI").is_none()
             && std::is_x86_feature_detected!("avx2")
             && std::is_x86_feature_detected!("avxvnni")
         {

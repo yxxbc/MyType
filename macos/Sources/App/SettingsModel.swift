@@ -1,14 +1,14 @@
-// 设置窗口的数据：wowtype.conf 和 custom.tsv（和 Linux 设置界面 settings/wowtype-config 改的是同样的键、同样的格式）。
+// 设置窗口的数据：mytype.conf 和 custom.tsv。
 //
 // 设置窗口只写文件：输入法按键时（AppState.checkForChanges）看到文件变了自己重新读，下一次按键就生效。
-// 改设置停 0.25 秒才写（拖数字时不要每一下都写），只写窗口里改过的键（WowtypeConfig.merged），
+// 改设置停 0.25 秒才写（拖数字时不要每一下都写），只写窗口里改过的键（MyTypeConfig.merged），
 // 窗口开着时在文本编辑里改的、别的键不会被盖掉；切回窗口时文件变了就重新读。
 
 import AppKit
 import AVFoundation
 
 enum SettingsPage: String, CaseIterable, Identifiable {
-    case general, input, emoji, voice, translate, words
+    case general, input, emoji, voice, translate, words, about
 
     var id: String { rawValue }
 
@@ -20,6 +20,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .voice: return "语音"
         case .translate: return "翻译"
         case .words: return "自定义词"
+        case .about: return "关于"
         }
     }
 
@@ -32,6 +33,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .voice: return "mic"
         case .translate: return "character.bubble"
         case .words: return "book.closed"
+        case .about: return "info.circle"
         }
     }
 }
@@ -45,7 +47,7 @@ struct SettingsToast: Identifiable {
 
 final class SettingsModel: ObservableObject {
     @Published var page: SettingsPage
-    @Published var config: WowtypeConfig {
+    @Published var config: MyTypeConfig {
         didSet {
             if config != oldValue && !quiet {
                 scheduleSave()
@@ -71,7 +73,7 @@ final class SettingsModel: ObservableObject {
     let configPath: String
     let customPath: String
     let supportDir: URL
-    /// 互译的 API Key 文件（0600），不写进 wowtype.conf
+    /// 互译的 API Key 文件（0600），不写进 mytype.conf
     let translateKeyPath: String
     /// TranslateLocalModel 留空时用的模型位置
     let defaultLocalModel: String
@@ -84,13 +86,21 @@ final class SettingsModel: ObservableObject {
     @Published private(set) var lexiconProgress: String?
     var lexiconBusy: Bool { lexiconProgress != nil }
     private var releaseChecking = false
+    /// 应用更新：发布页上的新版（没有就是 nil）、检查/下载/安装的状态
+    @Published private(set) var updateLatest: UpdateRelease?
+    @Published private(set) var updateError: String?
+    @Published private(set) var updateChecking = false
+    @Published private(set) var updateChecked = false
+    @Published private(set) var updateProgress: String?
+    @Published private(set) var updateInstalling = false
+    private var updateCheckedOnce = false
     /// 安装包里的雾凇词库（猜拼音用；设置里换了词库就用换的那个）
     private let bundledLexicon: String?
-    /// 安装包里有五笔码表（wubi86.tsv）：没有时「五笔输入」灰掉，说为什么（和 Linux 设置一样）
+    /// 安装包里有五笔码表（wubi86.tsv）：没有时「五笔输入」灰掉，说为什么
     let wubiTableAvailable: Bool
 
     /// 文件里现在的设置（上次读或写的）：保存时只写 config 和它不一样的键
-    private var saved: WowtypeConfig
+    private var saved: MyTypeConfig
     private var configStamp: FileStamp?
     private var customStamp: FileStamp?
     private var quiet = false
@@ -109,10 +119,13 @@ final class SettingsModel: ObservableObject {
         defaultLocalModel = state.localModelPath
         translateKeySet = !TranslateKeyFile.read(state.translateKeyPath).isEmpty
         wanxiangVersion = LexiconPack.installedVersion(folder: LexiconPackInstaller.folder(in: state.supportDir).path)
+        let knownUpdate = UpdateState.available(current: appVersion)
+        updateLatest = knownUpdate
+        updateChecked = knownUpdate != nil
         bundledLexicon = state.resource("lexicon.tsv")
         wubiTableAvailable = state.resource("wubi86.tsv") != nil
         configStamp = FileStamp(state.configPath)
-        let loaded = WowtypeConfig.parse(readText(state.configPath) ?? "")
+        let loaded = MyTypeConfig.parse(readText(state.configPath) ?? "")
         saved = loaded
         config = loaded
         customStamp = FileStamp(state.customWordsPath)
@@ -135,7 +148,7 @@ final class SettingsModel: ObservableObject {
         translateKeySet = !TranslateKeyFile.read(translateKeyPath).isEmpty
         if FileStamp(configPath) != configStamp {
             configStamp = FileStamp(configPath)
-            let loaded = WowtypeConfig.parse(readText(configPath) ?? "")
+            let loaded = MyTypeConfig.parse(readText(configPath) ?? "")
             saved = loaded
             quietly { config = loaded }
         }
@@ -152,7 +165,7 @@ final class SettingsModel: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
     }
 
-    /// 写互译的 API Key（空串删掉）。Key 不进 wowtype.conf，输入法下一次翻译时读。
+    /// 写互译的 API Key（空串删掉）。Key 不进 mytype.conf，输入法下一次翻译时读。
     func setTranslateKey(_ key: String) {
         if TranslateKeyFile.write(key, to: translateKeyPath) {
             translateKeySet = !TranslateKeyFile.read(translateKeyPath).isEmpty
@@ -182,16 +195,16 @@ final class SettingsModel: ObservableObject {
             return
         }
         configStamp = FileStamp(configPath)
-        let now = WowtypeConfig.parse(out)
+        let now = MyTypeConfig.parse(out)
         saved = now
         if now != config {
             quietly { config = now }
         }
     }
 
-    /// 恢复默认设置：词库不动（和 Linux 一样），自定义词不受影响。
+    /// 恢复默认设置：词库不动（和以前一样），自定义词不受影响。
     func resetToDefaults() {
-        var defaults = WowtypeConfig()
+        var defaults = MyTypeConfig()
         defaults.lexicon = config.lexicon
         config = defaults
         save()
@@ -210,7 +223,91 @@ final class SettingsModel: ObservableObject {
         return bundledLexicon
     }
 
-    // MARK: 万象词库（和 Linux 设置的「万象拼音」一样）
+    // MARK: 应用更新（检查发布页、下载 pkg、交给 installer）
+
+    /// 打开「关于」页时自动查一次；手动点「检查更新」也走这里。
+    func checkUpdates(manual: Bool = false) {
+        guard !updateChecking, !updateInstalling else { return }
+        updateChecking = true
+        updateError = nil
+        Updater.shared.checkLatest { [weak self] result in
+            guard let self else { return }
+            self.updateChecking = false
+            self.updateChecked = true
+            switch result {
+            case .success(let release):
+                self.updateLatest = Update.isNewer(release.version, than: appVersion) ? release : nil
+                UpdateState.note(release, current: appVersion)
+                if manual {
+                    self.showToast(self.updateLatest == nil ? "已经是最新版（MyType \(appVersion)）"
+                                                            : "有新版本 MyType \(release.version)")
+                }
+            case .failure(let error):
+                self.updateError = "检查更新失败：\(error.localizedDescription)"
+                if manual { self.showToast(self.updateError ?? "检查更新失败") }
+            }
+        }
+    }
+
+    func checkUpdatesOnce() {
+        guard !updateCheckedOnce else { return }
+        updateCheckedOnce = true
+        checkUpdates()
+    }
+
+    /// 确认后下载、校验，再交给系统的 installer。安装时 MyType 会退出，装完 postinstall 重新打开。
+    func updateNow() {
+        guard let release = updateLatest, !updateInstalling else { return }
+        let alert = NSAlert()
+        alert.messageText = "更新到 MyType \(release.version)？"
+        alert.informativeText = "要下载 \(release.package)。\n安装时 MyType 会退出，装好后自动重新打开并切回来；"
+            + "设置、用户词和自定义词都会保留。"
+        alert.addButton(withTitle: "下载并安装")
+        alert.addButton(withTitle: "取消")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        updateInstalling = true
+        updateProgress = "正在连接…"
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let result = Result { () -> URL in
+                try Updater.shared.download(release) { done, total in
+                    let text = total > 0
+                        ? "正在下载：\(LocalModel.sizeText(done)) / \(LocalModel.sizeText(total))（\(done * 100 / total)%）"
+                        : "正在下载：\(LocalModel.sizeText(done))"
+                    DispatchQueue.main.async { self?.updateProgress = text }
+                }
+            }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                switch result {
+                case .success(let package):
+                    self.updateProgress = "正在安装，MyType 会退出并自动重开…"
+                    self.save()  // 安装器会停掉进程，先把设置写下去
+                    do {
+                        try Updater.shared.install(package: package)
+                    } catch {
+                        self.updateInstalling = false
+                        self.updateProgress = nil
+                        self.updateError = "没装上：\(error.localizedDescription)"
+                        self.showToast(self.updateError ?? "没装上")
+                    }
+                case .failure(let error):
+                    self.updateInstalling = false
+                    self.updateProgress = nil
+                    self.updateError = "更新没下完：\(error.localizedDescription)"
+                    self.showToast(self.updateError ?? "更新没下完")
+                }
+            }
+        }
+    }
+
+    /// 打开发布页（自动更新用不了时的退路，或者想看这次更新内容）。
+    func openReleasePage() {
+        let url = updateLatest.map { Update.releasePage(tag: $0.tag) } ?? Update.latestPage
+        if let link = URL(string: url) { NSWorkspace.shared.open(link) }
+    }
+
+    // MARK: 万象词库（和设置窗口的「万象拼音」一样）
 
     enum LexiconKind { case rimeIce, wanxiang, custom }
 
@@ -313,7 +410,7 @@ final class SettingsModel: ObservableObject {
         }
     }
 
-    /// 删掉万象（正在用时不让删，和 Linux 一样）
+    /// 删掉万象（正在用时不让删，和以前一样）
     func removeWanxiang() {
         guard lexiconKind != .wanxiang, !lexiconBusy else { return }
         let freed = LexiconPackInstaller.remove(supportDir: supportDir)
@@ -339,10 +436,10 @@ final class SettingsModel: ObservableObject {
         }
     }
 
-    // MARK: 本地翻译模型（和 Linux 设置的「离线翻译模型」一样：缺什么下什么）
+    // MARK: 本地翻译模型（和设置窗口的「离线翻译模型」一样：缺什么下什么）
 
     /// 正在下载时的进度（nil：没在下载）
-    // MARK: 语音模型（和 Linux 设置的「语音」页一样：从腾讯的 CDN 下载官方离线语音包）
+    // MARK: 语音模型（和设置窗口的「语音」页一样：从腾讯的 CDN 下载官方离线语音包）
 
     /// 下载中的进度（已下, 总共）；没在下是 nil
     @Published private(set) var voiceProgress: (Int64, Int64)?
@@ -356,7 +453,7 @@ final class SettingsModel: ObservableObject {
         return VoiceModelInstaller.isReady(supportDir: supportDir)
     }
 
-    /// 「语音模型」那一行的状态，和 Linux 一样
+    /// 「语音模型」那一行的状态，和以前一样
     var voiceModelStatus: String {
         _ = voiceRevision
         if let (done, total) = voiceProgress {
@@ -668,7 +765,7 @@ final class SettingsModel: ObservableObject {
     func importWords() {
         let panel = NSOpenPanel()
         panel.title = "导入自定义词"
-        panel.message = "每行：编码<TAB>词（MyType 导出的文件、Linux 上的 custom.tsv 都行）"
+        panel.message = "每行：编码<TAB>词（MyType 导出的文件、以前的 custom.tsv 都行）"
         panel.prompt = "导入"
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
@@ -693,7 +790,7 @@ final class SettingsModel: ObservableObject {
     func exportWords() {
         let panel = NSSavePanel()
         panel.title = "导出自定义词"
-        panel.nameFieldStringValue = "wowtype-custom-words.tsv"
+        panel.nameFieldStringValue = "mytype-custom-words.tsv"
         panel.prompt = "导出"
         present(panel) { [weak self] url in
             guard let self, let url else { return }

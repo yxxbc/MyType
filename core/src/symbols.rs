@@ -120,7 +120,7 @@ pub enum PunctStyle {
 /// - 半角样式：一律原样上屏
 /// - 全角样式：数字后面的符号一律原样（3.14、20:22、3,000、50%），不换成中文标点
 ///
-/// 引号左右交替的状态记在线程里（C 接口 `wowtype_punct` 用）；会话用 [`punct_with`]，各记各的。
+/// 引号左右交替的状态记在线程里（C 接口 `mytype_punct` 用）；会话用 [`punct_with`]，各记各的。
 pub fn punct(ascii: char, style: PunctStyle, prev: Option<char>) -> Option<&'static str> {
     QUOTE_OPEN.with(|state| {
         let mut quotes = state.get();

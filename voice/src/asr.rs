@@ -95,7 +95,7 @@ impl AsrChannel for MockChannel {
 
 /// 外部命令式识别渠道：把整段音频写成 WAV，交给命令行识别器，读 stdout。
 ///
-/// 这样在 Linux 上不用编译任何原生绑定就能接 whisper.cpp / sherpa-onnx：
+/// 这样在 以前不用编译任何原生绑定就能接 whisper.cpp / sherpa-onnx：
 ///
 /// ```text
 /// whisper-cli -m ggml-large-v3-turbo.bin -l zh -nt -f
@@ -218,7 +218,7 @@ impl AsrChannel for ProcessChannel {
         use std::sync::atomic::{AtomicUsize, Ordering};
         static SEQ: AtomicUsize = AtomicUsize::new(0);
         let path = std::env::temp_dir().join(format!(
-            "wowtype-asr-{}-{}.wav",
+            "mytype-asr-{}-{}.wav",
             std::process::id(),
             SEQ.fetch_add(1, Ordering::Relaxed)
         ));

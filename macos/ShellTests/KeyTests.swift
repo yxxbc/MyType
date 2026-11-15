@@ -1,4 +1,4 @@
-// 按键：每一组新开一个输入框（新的输入控制器 + 假输入框），设置写进临时的 wowtype.conf。
+// 按键：每一组新开一个输入框（新的输入控制器 + 假输入框），设置写进临时的 mytype.conf。
 
 import AppKit
 import Carbon

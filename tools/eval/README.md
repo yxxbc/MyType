@@ -17,11 +17,11 @@ python3 tools/make_corpus_eval.py --text sentences.txt --out cases.tsv --count 2
 
 ```bash
 # 词库 + 词级 LM
-cargo run --bin wowtype-eval -- --lexicon lexicon.tsv --eval /tmp/test.tsv \
+cargo run --bin mytype-eval -- --lexicon lexicon.tsv --eval /tmp/test.tsv \
     --lm words.lm --k 1
 
 # 再加上字级神经语言模型（从本机微信输入法里取；提取脚本在上游 tools/install_wetype_nnlm.py）
-cargo run --bin wowtype-eval -- --lexicon lexicon.tsv --eval /tmp/test.tsv \
+cargo run --bin mytype-eval -- --lexicon lexicon.tsv --eval /tmp/test.tsv \
     --lm words.lm --nnlm nlrgpt2_nnlm.bin --k 1
 ```
 
@@ -136,7 +136,7 @@ cargo run --bin wowtype-eval -- --lexicon lexicon.tsv --eval /tmp/test.tsv \
   - 「发布」：`scripts/make-data.sh` 默认构建。它融的 `data/tatoeba-freq.tsv` 是从全部 89248 句 Tatoeba 挖的，
     **包括下面的 tune、heldout、test**，在 Tatoeba 各组上的数字偏乐观，只作参考。
   - 「干净」：同样的融法，但语料换成 Tatoeba 去掉 test、tune、heldout 和日常句之后的 84685 句
-    （`WOWTYPE_CORPUS`，和 docs/DATA.md §3.3 的做法一样）。选参数、报 Tatoeba 留出都用它。
+    （`MYTYPE_CORPUS`，和 docs/DATA.md §3.3 的做法一样）。选参数、报 Tatoeba 留出都用它。
 - 用例：和上一节同一次切分（`make_corpus_eval.py` 默认种子，`train:3000 test:500 tune:2000 heldout:2000`）。
   只在 tune 上扫权重、取 tune 上最好的；别的组都只跑 1.0 和选出来的那个值，heldout 只跑这一次。
 - 「+/−」是逐句比较（1.0 错、新的对 / 1.0 对、新的错），p 是双侧精确符号检验。

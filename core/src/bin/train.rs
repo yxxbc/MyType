@@ -1,7 +1,7 @@
 //! 用「输入 → 用户选中的词」拟合排序权重。
 //!
 //! ```
-//! cargo run --release -p wowtype-core --bin wowtype-train -- \
+//! cargo run --release -p mytype-core --bin mytype-train -- \
 //!     --lexicon lexicon.tsv --cases cases.tsv --epochs 300 --out weights.txt
 //! ```
 //!
@@ -10,10 +10,10 @@
 
 use std::sync::Arc;
 
-use wowtype_core::lm::{ArpaLm, BigramLm, LanguageModel};
-use wowtype_core::rank::{FeatureWeights, FEATURE_NAMES};
-use wowtype_core::train::{accuracy, train, Sample, TrainConfig};
-use wowtype_core::{open_cached, Engine, EngineConfig, Lexicon};
+use mytype_core::lm::{ArpaLm, BigramLm, LanguageModel};
+use mytype_core::rank::{FeatureWeights, FEATURE_NAMES};
+use mytype_core::train::{accuracy, train, Sample, TrainConfig};
+use mytype_core::{open_cached, Engine, EngineConfig, Lexicon};
 
 fn fail(msg: &str) -> ! {
     eprintln!("{msg}");
@@ -45,7 +45,7 @@ fn main() {
             "--lr" => config.learning_rate = take(&mut i).parse().unwrap_or(config.learning_rate),
             "--l2" => config.l2 = take(&mut i).parse().unwrap_or(config.l2),
             "-h" | "--help" => {
-                println!("wowtype-train --lexicon <tsv> --cases <tsv> [--lm words.lm|--arpa model.arpa] [--out weights.txt] [--epochs n] [--lr v] [--l2 v]");
+                println!("mytype-train --lexicon <tsv> --cases <tsv> [--lm words.lm|--arpa model.arpa] [--out weights.txt] [--epochs n] [--lr v] [--l2 v]");
                 return;
             }
             other => fail(&format!("未知参数: {other}")),
@@ -61,7 +61,7 @@ fn main() {
     let lm: Arc<dyn LanguageModel> = if let Some(path) = &arpa {
         Arc::new(ArpaLm::from_arpa_path(path).unwrap_or_else(|e| fail(&format!("{e:#}"))))
     } else if let Some(path) = &lm_path {
-        wowtype_core::lm::load_lm(path).unwrap_or_else(|e| fail(&format!("{e:#}")))
+        mytype_core::lm::load_lm(path).unwrap_or_else(|e| fail(&format!("{e:#}")))
     } else {
         Arc::new(BigramLm::default())
     };
@@ -122,7 +122,7 @@ fn main() {
         }
         spec.push_str(&format!("{name}={value:.4}"));
     }
-    println!("\n权重（可用于 wowtype-eval --weights）:\n{spec}");
+    println!("\n权重（可用于 mytype-eval --weights）:\n{spec}");
 
     if !out_path.is_empty() {
         match std::fs::write(&out_path, &spec) {

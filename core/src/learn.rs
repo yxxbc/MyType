@@ -148,7 +148,7 @@ pub fn save_history<P: AsRef<Path>>(
     pairs: &UserPairs,
 ) -> Result<()> {
     let path = path.as_ref();
-    let mut out = String::from("# wowtype 用户输入习惯 v1\n");
+    let mut out = String::from("# mytype 用户输入习惯 v1\n");
     let clean = |s: &str| !s.contains(['\t', '\n', '\r']);
     let mut words: Vec<_> = words.iter().filter(|(w, _)| clean(w)).collect();
     words.sort_by(|a, b| a.0.cmp(b.0));
@@ -246,7 +246,7 @@ mod tests {
 
     #[test]
     fn history_round_trips() {
-        let dir = std::env::temp_dir().join(format!("wowtype-learn-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("mytype-learn-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("history.tsv");
         let mut words = HashMap::new();

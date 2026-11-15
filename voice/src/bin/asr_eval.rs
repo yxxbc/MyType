@@ -1,6 +1,6 @@
 //! 离线识别评测：按 10ms 一块模拟流式输入，统计定稿字错率、中间结果跳动。
 //!
-//! wowtype-asr-eval [--dir 模型目录] [--final-only] list.tsv 音频目录
+//! mytype-asr-eval [--dir 模型目录] [--final-only] list.tsv 音频目录
 //!
 //! list.tsv 每行 `文件名(不带 .wav)<TAB>参考文本`。字错率去掉标点、数字换成汉字再比。
 //! 输出每种定稿算法的整体字错率；中间结果：说完那一刻（定稿前最后一次）的字错率、
@@ -9,8 +9,8 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use wowtype_voice::wav;
-use wowtype_voice::wtlocal::{download, load, FinalMode, Stream};
+use mytype_voice::wav;
+use mytype_voice::wtlocal::{download, load, FinalMode, Stream};
 
 const PARTIAL_EVERY_FRAMES: usize = 30;
 
@@ -63,7 +63,7 @@ fn main() {
         i += 1;
     }
     let [list, audio] = rest.as_slice() else {
-        eprintln!("用法: wowtype-asr-eval [--dir 模型目录] list.tsv 音频目录");
+        eprintln!("用法: mytype-asr-eval [--dir 模型目录] list.tsv 音频目录");
         std::process::exit(2);
     };
     let dir = dir.unwrap_or_else(download::default_dir);
@@ -109,7 +109,7 @@ fn main() {
             let mut st = Stream::new(model.clone());
             let mut shown: Vec<char> = Vec::new();
             let mut first: Option<usize> = None;
-            let mut stab = wowtype_voice::wtlocal::Stabilizer::default();
+            let mut stab = mytype_voice::wtlocal::Stabilizer::default();
             let mut stab_shown: Vec<char> = Vec::new();
             for (n, chunk) in pcm.chunks(160).enumerate() {
                 st.push(chunk);

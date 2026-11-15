@@ -98,7 +98,7 @@ mod tests {
 
     #[test]
     fn replaces_whole_file_and_leaves_no_temp() {
-        let dir = std::env::temp_dir().join(format!("wowtype-fsutil-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("mytype-fsutil-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("user.tsv");
         std::fs::write(&path, "旧内容，比新的长很多很多很多\n").unwrap();
@@ -116,7 +116,7 @@ mod tests {
 
     #[test]
     fn removes_stale_temps_but_not_fresh_ones() {
-        let dir = std::env::temp_dir().join(format!("wowtype-fsutil-stale-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("mytype-fsutil-stale-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("user.tsv");
         // 两小时前被杀的进程留下的；另一个进程刚建的（正在写）；别的文件的临时文件
@@ -145,7 +145,7 @@ mod tests {
     #[test]
     fn write_replace_writes_whole_file() {
         let dir =
-            std::env::temp_dir().join(format!("wowtype-fsutil-replace-{}", std::process::id()));
+            std::env::temp_dir().join(format!("mytype-fsutil-replace-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("emoji-recent.txt");
         std::fs::write(&path, "旧的很长很长的内容\n").unwrap();
@@ -158,7 +158,7 @@ mod tests {
     fn failed_write_keeps_old_file() {
         // 目标所在目录不存在：临时文件建不出来，原文件（在别处）不受影响，报错
         let dir =
-            std::env::temp_dir().join(format!("wowtype-fsutil-missing-{}", std::process::id()));
+            std::env::temp_dir().join(format!("mytype-fsutil-missing-{}", std::process::id()));
         let path = dir.join("nope").join("user.tsv");
         assert!(write_atomic(&path, b"x").is_err());
         assert!(!path.exists());

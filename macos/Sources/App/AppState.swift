@@ -11,13 +11,13 @@ final class AppState {
     /// 载入途中设置又换了词库：载完再看一次
     private var reloadAfterLoading = false
     private var commitsSinceSave = 0
-    /// 每上屏这么多次存一次（系统可能随时杀掉输入法进程，和 fcitx5 外壳一样）。
+    /// 每上屏这么多次存一次（系统可能随时杀掉输入法进程）。
     private let saveEvery = 20
 
-    /// wowtype.conf 的内容（键名同 Linux）。改了以后 configGeneration 加一，输入控制器照着重新设置会话。
-    private(set) var config = WowtypeConfig()
+    /// mytype.conf 的内容。改了以后 configGeneration 加一，输入控制器照着重新设置会话。
+    private(set) var config = MyTypeConfig()
     private(set) var configGeneration = 0
-    /// 互译的翻译器：设置里第一次打开 Translate 时建，之后一直留着（和 Linux 一样），所有输入框共用。
+    /// 互译的翻译器：设置里第一次打开 Translate 时建，之后一直留着（和以前一样），所有输入框共用。
     /// 本地模型的 llama-server 也只有这一个，第一次翻译时才起
     private(set) var translator: Translator?
     /// 正在用的词库文件，和它载入时的 (大小, 修改时间)
@@ -35,7 +35,18 @@ final class AppState {
     private var clipboardChangeCount = -1
 
     private init() {
+        AppState.migrateLegacyConfig(in: supportDir)
         RecentEmoji.shared.path = supportDir.appendingPathComponent("emoji-recent.txt").path
+    }
+
+    /// 0.6.0 起设置文件叫 mytype.conf。旧版留下的 wowtype.conf 还在、新的没有时改过来。
+    /// 两个都在（比如刚降级跑过一次）时不动新的，旧文件留在原地。
+    static func migrateLegacyConfig(in dir: URL) {
+        let fm = FileManager.default
+        let old = dir.appendingPathComponent("wowtype.conf").path
+        let new = dir.appendingPathComponent("mytype.conf").path
+        guard !fm.fileExists(atPath: new), fm.fileExists(atPath: old) else { return }
+        try? fm.moveItem(atPath: old, toPath: new)
     }
 
     // 第一次要画候选框时才建窗口（自检时没有图形界面）
@@ -52,9 +63,9 @@ final class AppState {
         Bundle.main.resourceURL ?? Bundle.main.bundleURL.appendingPathComponent("Contents/Resources")
     }
 
-    /// 用户数据：~/Library/Application Support/MyType（测试时可用 WOWTYPE_DATA_DIR 换个地方）
+    /// 用户数据：~/Library/Application Support/MyType（测试时可用 MYTYPE_DATA_DIR 换个地方）
     var supportDir: URL {
-        if let dir = ProcessInfo.processInfo.environment["WOWTYPE_DATA_DIR"], !dir.isEmpty {
+        if let dir = ProcessInfo.processInfo.environment["MYTYPE_DATA_DIR"], !dir.isEmpty {
             return URL(fileURLWithPath: dir, isDirectory: true)
         }
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -64,25 +75,25 @@ final class AppState {
 
     var userDictPath: String { supportDir.appendingPathComponent("user.tsv").path }
     var historyPath: String { supportDir.appendingPathComponent("history.tsv").path }
-    /// 设置，键名同 Linux 的 ~/.config/fcitx5/conf/wowtype.conf
-    var configPath: String { supportDir.appendingPathComponent("wowtype.conf").path }
-    /// 自定义词（常用语），格式同 Linux 的 ~/.local/share/wowtype/custom.tsv
+    /// 设置，键名见 ~/Library/Application Support/MyType/mytype.conf
+    var configPath: String { supportDir.appendingPathComponent("mytype.conf").path }
+    /// 自定义词（常用语），格式见 ~/Library/Application Support/MyType/custom.tsv
     var customWordsPath: String { supportDir.appendingPathComponent("custom.tsv").path }
-    /// 互译的 API Key（一行，0600），同 Linux 的 ~/.config/wowtype/translate.key；不写进 wowtype.conf
+    /// 互译的 API Key（一行，0600），见 ~/Library/Application Support/MyType/translate.key；不写进 mytype.conf
     var translateKeyPath: String { supportDir.appendingPathComponent("translate.key").path }
-    /// 改 wowtype.conf 的 Lexicon，只动这一项（命令行 --install-lexicon / --use-lexicon 用）。
+    /// 改 mytype.conf 的 Lexicon，只动这一项（命令行 --install-lexicon / --use-lexicon 用）。
     /// 输入法按键时看到文件变了就换词库；万象包更新了、路径没变时，词库文件的大小、时间变了也会重载。
     func setLexicon(_ path: String) throws {
         let text = readText(configPath)
-        let base = WowtypeConfig.parse(text ?? "")
+        let base = MyTypeConfig.parse(text ?? "")
         var wanted = base
         wanted.lexicon = path
         try FileManager.default.createDirectory(at: supportDir, withIntermediateDirectories: true)
         try writeText(wanted.merged(changesFrom: base, into: text), to: configPath)
     }
 
-    /// 本地翻译模型，设置里 TranslateLocalModel 留空时用（同 Linux 的 ~/.local/share/wowtype/models/）
-    /// 语音识别模型（设置窗口「语音」页下载），同 Linux 的 ~/.local/share/wowtype/wtlocal
+    /// 本地翻译模型，设置里 TranslateLocalModel 留空时用（见 ~/Library/Application Support/MyType/models/）
+    /// 语音识别模型（设置窗口「语音」页下载），见 ~/Library/Application Support/MyType/wtlocal
     var voiceModelDir: String { VoiceModelInstaller.folder(in: supportDir).path }
 
     var localModelPath: String {
@@ -90,7 +101,7 @@ final class AppState {
     }
 
     /// 设置里没填 TranslateLlamaServer 时去哪找 llama-server：输入法是系统启动的，PATH 里只有
-    /// /usr/bin 这些，Homebrew 装的 llama.cpp 要自己找。都没有时交给核心（PATH、~/.local/share/wowtype/llama）。
+    /// /usr/bin 这些，Homebrew 装的 llama.cpp 要自己找。都没有时交给核心（PATH、~/Library/Application Support/MyType/llama）。
     func findLlamaServer() -> String {
         let candidates = [supportDir.appendingPathComponent("llama/llama-server").path,
                           "/opt/homebrew/bin/llama-server", "/usr/local/bin/llama-server",
@@ -138,10 +149,10 @@ final class AppState {
         return FileManager.default.fileExists(atPath: path) ? path : nil
     }
 
-    /// 读设置文件。没有就用默认值（和 Linux 一样，不自动建文件；设置窗口改了设置、或者用文本编辑打开时才建）。
+    /// 读设置文件。没有就用默认值（和以前一样，不自动建文件；设置窗口改了设置、或者用文本编辑打开时才建）。
     func loadConfig() {
         configStamp = FileStamp(configPath)
-        let loaded = WowtypeConfig.load(path: configPath)
+        let loaded = MyTypeConfig.load(path: configPath)
         if loaded != config || configGeneration == 0 {
             config = loaded
             configGeneration += 1
@@ -157,7 +168,7 @@ final class AppState {
         applyPanelSettings()
     }
 
-    /// 设置里管互译的部分。和 Linux 一样，打开过一次就留着翻译器（关掉时只是切不到「译」）；
+    /// 设置里管互译的部分。和以前一样，打开过一次就留着翻译器（关掉时只是切不到「译」）；
     /// 不用本地模型了马上停掉 llama-server。
     private func applyTranslateSettings() {
         if config.translate && translator == nil {
@@ -180,7 +191,7 @@ final class AppState {
 
     /// 退出时停掉本地模型的 llama-server（它是输入法起的子进程）。
     func shutdownTranslator() {
-        translator?.configure(WowtypeConfig(), keyFile: "", defaultLocalModel: "")
+        translator?.configure(MyTypeConfig(), keyFile: "", defaultLocalModel: "")
     }
 
     /// 候选框的设置（字号）。
@@ -332,12 +343,12 @@ final class AppState {
     func openConfigFile() {
         if !FileManager.default.fileExists(atPath: configPath) {
             try? FileManager.default.createDirectory(at: supportDir, withIntermediateDirectories: true)
-            try? WowtypeConfig.template().write(toFile: configPath, atomically: true, encoding: .utf8)
+            try? MyTypeConfig.template().write(toFile: configPath, atomically: true, encoding: .utf8)
         }
         openInTextEditor(configPath)
     }
 
-    /// 设置窗口「文件」菜单「用文本编辑打开自定义词」：custom.tsv，格式同 Linux。
+    /// 设置窗口「文件」菜单「用文本编辑打开自定义词」：custom.tsv，格式见 docs/CONFIG.md。
     func openCustomWordsFile() {
         if !FileManager.default.fileExists(atPath: customWordsPath) {
             try? FileManager.default.createDirectory(at: supportDir, withIntermediateDirectories: true)
@@ -411,7 +422,7 @@ final class AppState {
         if !historySaved {
             NSLog("MyType: 保存输入习惯失败")
         }
-        // 两样都存上了才清零：存失败的那批下次接着存（和 Linux 一样）
+        // 两样都存上了才清零：存失败的那批下次接着存（和以前一样）
         if dictSaved && historySaved {
             commitsSinceSave = 0
         }

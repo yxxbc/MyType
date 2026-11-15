@@ -1,10 +1,10 @@
-//! 输入会话的按键测试：从 fcitx5-addon/test/key_harness.cpp 搬过来的用例，
-//! 用纯 Rust 驱动 [`wowtype_core::session::Session`]，macOS 的 CI 也跑。
+//! 输入会话的按键测试：从上游的按键测试搬过来的用例，
+//! 用纯 Rust 驱动 [`mytype_core::session::Session`]，macOS 的 CI 也跑。
 //!
 //! 只搬已经挪进会话的行为：编辑区、已选词栈、退格、Esc，候选列表（引擎候选、计算器、
 //! emoji 推荐、数字按键 emoji、日期时间）、编辑区分音节，选词、整句上屏和学习，
 //! 空格、回车、数字、分号引号选词、翻页、移动候选和展开面板。
-//! 标点（先上屏再出标点）、工具栏、emoji 面板、互译还在 fcitx5 外壳里。
+//! 标点（先上屏再出标点）、工具栏、emoji 面板、互译还在 外壳里。
 //! 不带引擎的用例没有候选，用 `push_selection` 造已选词。
 //! 以后每挪一块，就把 key_harness 里对应的用例搬过来。
 //!
@@ -13,13 +13,13 @@
 
 use std::sync::Arc;
 
-use wowtype_core::datetime::LocalTime;
-use wowtype_core::lm::BigramLm;
-use wowtype_core::session::{
+use mytype_core::datetime::LocalTime;
+use mytype_core::lm::BigramLm;
+use mytype_core::session::{
     keysym, modifier, ArrowKeys, CandidateKind, Config, Frame, Key, Panel, PunctStyle, Selection,
     Session,
 };
-use wowtype_core::{Converter, Engine, Lexicon, MemoryLexicon};
+use mytype_core::{Converter, Engine, Lexicon, MemoryLexicon};
 
 /// 按一串键，和 key_harness 的 type() 一样：<sp> <bs> <cr> <esc> 等是特殊键，其余按字符。
 fn type_keys(session: &mut Session, keys: &str) -> Frame {
@@ -858,7 +858,7 @@ fn digits_choose_on_the_page() {
     // 带 Shift 的数字（法语键盘打数字要按 Shift）不选词：先上屏光标处的候选，再上屏这个数字
     let (mut session, all) = default_paged();
     let frame = session.key(&Key {
-        modifiers: wowtype_core::session::modifier::SHIFT,
+        modifiers: mytype_core::session::modifier::SHIFT,
         ..Key::char('2')
     });
     assert_eq!(frame.commit, Some(format!("{}2", all[0])));
@@ -923,7 +923,7 @@ fn paging_keys() {
 
 #[test]
 fn configured_page_keys() {
-    use wowtype_core::session::page_keys;
+    use mytype_core::session::page_keys;
     let (mut session, _) = paged(Config {
         page_keys: page_keys::BRACKET | page_keys::COMMA | page_keys::TAB,
         ..Config::default()
@@ -932,7 +932,7 @@ fn configured_page_keys() {
     assert_eq!(type_keys(&mut session, ".").cand_start, 10);
     assert_eq!(type_keys(&mut session, "<tab>").cand_start, 15);
     let shift_tab = Key {
-        modifiers: wowtype_core::session::modifier::SHIFT,
+        modifiers: mytype_core::session::modifier::SHIFT,
         ..Key::press(keysym::TAB)
     };
     assert_eq!(session.key(&shift_tab).cand_start, 10);
@@ -979,8 +979,8 @@ fn cursor_moves_across_pages_but_stops_at_both_ends() {
 
 #[test]
 fn actions_from_the_shell() {
-    // 外壳把 fcitx5 全局的翻页、移动候选热键（或鼠标点的翻页按钮）翻成动作传进来
-    use wowtype_core::session::KeyAction;
+    // 外壳把 全局的翻页、移动候选热键（或鼠标点的翻页按钮）翻成动作传进来
+    use mytype_core::session::KeyAction;
     let (mut session, all) = default_paged();
     let frame = session.key(&Key::action(KeyAction::NextPage));
     assert!(frame.handled);
@@ -1000,7 +1000,7 @@ fn actions_from_the_shell() {
     assert_eq!(session.key(&Key::action(KeyAction::PrevPage)).cand_start, 0);
     // 第一页再往前：还是吃掉
     assert!(session.key(&Key::action(KeyAction::PrevPage)).handled);
-    // 动作带着键码：动作优先（比如 fcitx5 设成 , . 翻页）
+    // 动作带着键码：动作优先（比如 设成 , . 翻页）
     let comma_next = Key {
         action: KeyAction::NextPage,
         ..Key::char('.')
@@ -1191,7 +1191,7 @@ fn select_by_shown_index() {
 #[test]
 fn semicolon_and_quote_select() {
     // key_harness：「分号选第 2 个、引号选第 3 个」
-    use wowtype_core::session::SelectKeys;
+    use mytype_core::session::SelectKeys;
     let (mut session, all) = paged(Config {
         select_keys: SelectKeys::SemicolonQuote,
         ..Config::default()
@@ -1236,11 +1236,11 @@ fn semicolon_and_quote_select() {
 fn shuangpin_semicolon_is_a_key_on_odd_count() {
     // key_harness：「微软双拼分号是韵母键」：等第二个键时分号进编辑区；
     // 打满一对以后分号不进编辑区（开了选词键时选第 2 个也不行：分号是 ing 键）
-    use wowtype_core::session::SelectKeys;
+    use mytype_core::session::SelectKeys;
     let lexicon: Arc<dyn Lexicon> = Arc::new(MemoryLexicon::from_tsv_str(MANY).unwrap());
     let mut engine = Engine::new(lexicon, Arc::new(BigramLm::default()));
     engine.set_shuangpin(true);
-    engine.set_shuangpin_scheme(wowtype_core::shuangpin::Scheme::Microsoft);
+    engine.set_shuangpin_scheme(mytype_core::shuangpin::Scheme::Microsoft);
     let engine: &'static Engine = Box::leak(Box::new(engine));
     let mut session = with(engine);
     session.configure(Config {
@@ -1523,7 +1523,7 @@ fn brackets_fall_through_when_nothing_to_pick() {
 
     let mut session = with(engine());
     session.configure(Config {
-        page_keys: wowtype_core::session::page_keys::BRACKET,
+        page_keys: mytype_core::session::page_keys::BRACKET,
         ..Config::default()
     });
     // [ ] 是翻页键时不取字；第一页上按 [ 没页可翻，当标点（和只有一页时按 - 一样）
@@ -1609,8 +1609,8 @@ fn punctuation_while_composing_commits_candidate_first() {
 
 #[test]
 fn auto_space_between_han_and_ascii() {
-    use wowtype_core::autospace::{DIGITS, LETTERS};
-    use wowtype_core::session::key_hints::NO_AUTO_SPACE;
+    use mytype_core::autospace::{DIGITS, LETTERS};
+    use mytype_core::session::key_hints::NO_AUTO_SPACE;
     let config = Config {
         auto_space: LETTERS | DIGITS,
         ..Config::default()
@@ -1649,7 +1649,7 @@ fn shift(sym: u32, release: bool, time_ms: u64) -> Key {
 
 #[test]
 fn shift_tap_toggles_mode() {
-    use wowtype_core::session::Mode;
+    use mytype_core::session::Mode;
     let mut session = with(engine());
     assert!(!session.key(&shift(keysym::SHIFT_L, false, 1000)).handled);
     let frame = session.key(&shift(keysym::SHIFT_L, true, 1100));
@@ -1666,7 +1666,7 @@ fn shift_tap_toggles_mode() {
 
 #[test]
 fn shift_tap_rules() {
-    use wowtype_core::session::{Mode, ShiftToggle};
+    use mytype_core::session::{Mode, ShiftToggle};
     // 按住太久不算
     let mut session = with(engine());
     session.key(&shift(keysym::SHIFT_L, false, 1000));
@@ -1681,7 +1681,7 @@ fn shift_tap_rules() {
     session.key(&shift(keysym::SHIFT_L, false, 1000));
     let observed = Key {
         keysym: u32::from(b'1'),
-        action: wowtype_core::session::KeyAction::Observe,
+        action: mytype_core::session::KeyAction::Observe,
         ..Key::default()
     };
     assert!(!session.key(&observed).handled, "OBSERVE 不处理");
@@ -1707,7 +1707,7 @@ fn shift_tap_rules() {
     let mut session = with(engine());
     session.key(&Key { modifiers: modifier::CTRL, ..shift(keysym::SHIFT_L, false, 1000) });
     assert!(!session.key(&shift(keysym::SHIFT_L, true, 1100)).mode_changed);
-    use wowtype_core::session::key_hints::PANEL_OPEN;
+    use mytype_core::session::key_hints::PANEL_OPEN;
     session.key(&Key { hints: PANEL_OPEN, ..shift(keysym::SHIFT_L, false, 2000) });
     assert!(!session.key(&shift(keysym::SHIFT_L, true, 2100)).mode_changed);
     // 有「译」：中 → 英 → 译 → 中
@@ -1723,7 +1723,7 @@ fn shift_tap_rules() {
 
 #[test]
 fn switching_to_english_commits_composition() {
-    use wowtype_core::session::Mode;
+    use mytype_core::session::Mode;
     let mut session = with(engine());
     type_keys(&mut session, "nihao");
     session.key(&shift(keysym::SHIFT_L, false, 1000));
@@ -1741,8 +1741,8 @@ fn switching_to_english_commits_composition() {
 
 #[test]
 fn english_mode_auto_space() {
-    use wowtype_core::autospace::{DIGITS, LETTERS};
-    use wowtype_core::session::Mode;
+    use mytype_core::autospace::{DIGITS, LETTERS};
+    use mytype_core::session::Mode;
     let mut session = with(engine());
     session.configure(Config { auto_space: LETTERS | DIGITS, ..Config::default() });
     session.set_mode(Mode::English);
@@ -1755,26 +1755,26 @@ fn english_mode_auto_space() {
 struct FakeTranslator {
     started: std::cell::RefCell<Vec<String>>,
     cancels: std::cell::Cell<usize>,
-    snap: std::cell::RefCell<wowtype_core::translate::Snapshot>,
+    snap: std::cell::RefCell<mytype_core::translate::Snapshot>,
 }
 
 impl FakeTranslator {
-    fn set(&self, state: wowtype_core::translate::JobState, text: &str) {
+    fn set(&self, state: mytype_core::translate::JobState, text: &str) {
         let mut snap = self.snap.borrow_mut();
         snap.state = state;
         snap.text = text.to_owned();
     }
 }
 
-impl wowtype_core::session::TranslateBackend for FakeTranslator {
+impl mytype_core::session::TranslateBackend for FakeTranslator {
     fn start(&self, text: &str) {
-        use wowtype_core::translate::JobState;
+        use mytype_core::translate::JobState;
         let snap = self.snap.borrow().clone();
         if snap.source == text && matches!(snap.state, JobState::Running | JobState::Done) {
             return;
         }
         self.started.borrow_mut().push(text.to_owned());
-        *self.snap.borrow_mut() = wowtype_core::translate::Snapshot {
+        *self.snap.borrow_mut() = mytype_core::translate::Snapshot {
             state: JobState::Running,
             source: text.to_owned(),
             text: String::new(),
@@ -1785,7 +1785,7 @@ impl wowtype_core::session::TranslateBackend for FakeTranslator {
         self.cancels.set(self.cancels.get() + 1);
         *self.snap.borrow_mut() = Default::default();
     }
-    fn poll(&self) -> wowtype_core::translate::Snapshot {
+    fn poll(&self) -> mytype_core::translate::Snapshot {
         self.snap.borrow().clone()
     }
     fn tag(&self, _text: &str) -> String {
@@ -1794,7 +1794,7 @@ impl wowtype_core::session::TranslateBackend for FakeTranslator {
 }
 
 fn translating(t: &'static FakeTranslator) -> Session<'static> {
-    use wowtype_core::session::Mode;
+    use mytype_core::session::Mode;
     let mut session = with(engine());
     session.set_translator(Some(t));
     session.set_mode(Mode::Translate);
@@ -1807,7 +1807,7 @@ fn at(c: char, time_ms: u64) -> Key {
 
 #[test]
 fn translate_collects_source_and_requests_after_pause() {
-    use wowtype_core::translate::JobState;
+    use mytype_core::translate::JobState;
     let t: &'static FakeTranslator = Box::leak(Box::default());
     let mut session = translating(t);
     for (i, c) in "nihao".chars().enumerate() {
@@ -1836,7 +1836,7 @@ fn translate_collects_source_and_requests_after_pause() {
 #[test]
 fn clearing_one_session_keeps_another_sessions_request() {
     // 两个输入框共用一个翻译器：A 发了请求，B 后来发的顶掉了它；A 清空时不能把 B 的请求取消掉
-    use wowtype_core::translate::JobState;
+    use mytype_core::translate::JobState;
     let t: &'static FakeTranslator = Box::leak(Box::default());
     let mut a = translating(t);
     let mut b = translating(t);
@@ -1863,7 +1863,7 @@ fn clearing_one_session_keeps_another_sessions_request() {
 
 #[test]
 fn translate_enter_before_done_commits_when_ready() {
-    use wowtype_core::translate::JobState;
+    use mytype_core::translate::JobState;
     let t: &'static FakeTranslator = Box::leak(Box::default());
     let mut session = translating(t);
     type_keys(&mut session, "nihao<sp>");
@@ -1905,7 +1905,7 @@ fn translate_keys() {
 
 #[test]
 fn leaving_translate_commits_source() {
-    use wowtype_core::session::{key_hints::NO_TRANSLATE, Mode};
+    use mytype_core::session::{key_hints::NO_TRANSLATE, Mode};
     let t: &'static FakeTranslator = Box::leak(Box::default());
     let mut session = translating(t);
     type_keys(&mut session, "nihao<sp>");
@@ -1922,18 +1922,18 @@ fn leaving_translate_commits_source() {
 }
 
 /// 外壳认出设置里的快捷键后交给会话的键（ToggleKey、TranslateModeKey）。
-fn hotkey(action: wowtype_core::session::KeyAction, hints: u32) -> Key {
+fn hotkey(action: mytype_core::session::KeyAction, hints: u32) -> Key {
     Key { keysym: keysym::SPACE, modifiers: modifier::CTRL | modifier::SHIFT, action, hints, ..Key::default() }
 }
 
-fn tap(session: &mut Session<'_>, at: u64) -> wowtype_core::session::Mode {
+fn tap(session: &mut Session<'_>, at: u64) -> mytype_core::session::Mode {
     session.key(&shift(keysym::SHIFT_L, false, at));
     session.key(&shift(keysym::SHIFT_L, true, at + 50)).mode
 }
 
 #[test]
 fn toggle_key_switches_chinese_english() {
-    use wowtype_core::session::{KeyAction::ToggleMode, Mode};
+    use mytype_core::session::{KeyAction::ToggleMode, Mode};
     let t: &'static FakeTranslator = Box::leak(Box::default());
     let mut session = translating(t);
     type_keys(&mut session, "nihao<sp>");
@@ -1949,7 +1949,7 @@ fn toggle_key_switches_chinese_english() {
 
 #[test]
 fn translate_key_enters_and_leaves_translate() {
-    use wowtype_core::session::{key_hints::NO_TRANSLATE, KeyAction::ToggleTranslate, Mode};
+    use mytype_core::session::{key_hints::NO_TRANSLATE, KeyAction::ToggleTranslate, Mode};
     let t: &'static FakeTranslator = Box::leak(Box::default());
     let mut session = with(engine());
     session.set_translator(Some(t));
@@ -1984,7 +1984,7 @@ fn translate_key_enters_and_leaves_translate() {
 
 #[test]
 fn translate_key_takes_translate_out_of_shift_cycle() {
-    use wowtype_core::session::{KeyAction::ToggleTranslate, Mode};
+    use mytype_core::session::{KeyAction::ToggleTranslate, Mode};
     let t: &'static FakeTranslator = Box::leak(Box::default());
     let mut session = with(engine());
     session.set_translator(Some(t));
@@ -2011,7 +2011,7 @@ fn clearing_one_session_keeps_others_request() {
 
 #[test]
 fn v_space_opens_toolbar() {
-    use wowtype_core::session::{Panel, Tool};
+    use mytype_core::session::{Panel, Tool};
     let mut session = with(engine());
     let frame = type_keys(&mut session, "v<sp>");
     assert_eq!(frame.panel, Panel::Tool);
@@ -2039,8 +2039,8 @@ fn v_space_opens_toolbar() {
 
 #[test]
 fn toolbar_clipboard_and_back() {
-    use wowtype_core::session::Tool;
-    wowtype_core::clipboard::clear();
+    use mytype_core::session::Tool;
+    mytype_core::clipboard::clear();
     // 没打开剪贴板历史：提示去设置里打开
     let mut session = with(engine());
     type_keys(&mut session, "v<sp>1");
@@ -2052,7 +2052,7 @@ fn toolbar_clipboard_and_back() {
     type_keys(&mut session, "<bs>");
     assert_eq!(session.open_panel(), None);
     // 打开了：选一条上屏（多行的显示成 ⏎）
-    wowtype_core::clipboard::remember("第一行\n第二行");
+    mytype_core::clipboard::remember("第一行\n第二行");
     let mut session = with(engine());
     session.configure(Config { clipboard_history: true, ..Config::default() });
     type_keys(&mut session, "v<sp>1");
@@ -2061,12 +2061,12 @@ fn toolbar_clipboard_and_back() {
     assert_eq!(frame.commit.as_deref(), Some("第一行\n第二行"));
     assert!(!frame.learned);
     assert_eq!(session.open_panel(), None);
-    wowtype_core::clipboard::clear();
+    mytype_core::clipboard::clear();
 }
 
 #[test]
 fn emoji_panel_search_and_pick() {
-    use wowtype_core::session::{Panel, Tool};
+    use mytype_core::session::{Panel, Tool};
     // 打了一半的拼音当搜索词；字母接着搜，退格删搜索词，删空了再按就关上
     let mut session = with(engine());
     type_keys(&mut session, "xiao");
@@ -2313,8 +2313,8 @@ wty\t八\t440000000
 /// 一级简码，按 a–y 的顺序。
 const WUBI_LEVEL1: &str = "工了以在有地一上不是中国同民为这我的要和产发人经主";
 
-fn wubi_table() -> Option<Arc<wowtype_core::wubi::WubiTable>> {
-    Some(Arc::new(wowtype_core::wubi::WubiTable::from_tsv_str(WUBI).unwrap()))
+fn wubi_table() -> Option<Arc<mytype_core::wubi::WubiTable>> {
+    Some(Arc::new(mytype_core::wubi::WubiTable::from_tsv_str(WUBI).unwrap()))
 }
 
 /// 带五笔码表的引擎（拼音词库照旧，z 临时拼音用）。
@@ -2650,7 +2650,7 @@ fn wubi_pick_char_and_select_keys() {
     assert_eq!(type_keys(&mut session, "wqvb]").commit.as_deref(), Some("好"));
     // 分号选第二个
     let config = Config {
-        select_keys: wowtype_core::session::SelectKeys::Semicolon,
+        select_keys: mytype_core::session::SelectKeys::Semicolon,
         ..wubi_config()
     };
     let mut session = wubi_with(wubi_engine(), config);
@@ -2673,7 +2673,7 @@ fn wubi_english_switch_and_emoji_panel() {
     // 打码途中切英文：已经打的码原样上屏（和拼音一样），不学
     let mut session = wubi_session();
     type_keys(&mut session, "wq");
-    let frame = session.set_mode(wowtype_core::session::Mode::English);
+    let frame = session.set_mode(mytype_core::session::Mode::English);
     assert_eq!(frame.commit.as_deref(), Some("wq"));
     assert!(!frame.learned);
     // 表情快捷键：五笔码不当搜索词，先顶字
@@ -2689,11 +2689,11 @@ fn wubi_english_switch_and_emoji_panel() {
     assert_eq!(session.toggle_emoji_panel().preedit, "xiao");
 }
 
-/// 真码表（scripts/make-wubi.sh 生成的 wubi86.tsv）：WOWTYPE_WUBI 指着它时才跑。
+/// 真码表（scripts/make-wubi.sh 生成的 wubi86.tsv）：MYTYPE_WUBI 指着它时才跑。
 #[test]
 fn wubi_real_table() {
-    let Ok(path) = std::env::var("WOWTYPE_WUBI") else {
-        eprintln!("没设 WOWTYPE_WUBI，跳过真码表的用例");
+    let Ok(path) = std::env::var("MYTYPE_WUBI") else {
+        eprintln!("没设 MYTYPE_WUBI，跳过真码表的用例");
         return;
     };
     let engine = engine();
@@ -2711,8 +2711,8 @@ fn wubi_real_table() {
 
 #[test]
 fn wubi_with_translate_auto_space_and_grid() {
-    use wowtype_core::autospace::{DIGITS, LETTERS};
-    use wowtype_core::session::Mode;
+    use mytype_core::autospace::{DIGITS, LETTERS};
+    use mytype_core::session::Mode;
     // 「译」里顶字：上屏的进原文，新码留在编辑区
     let t: &'static FakeTranslator = Box::leak(Box::default());
     let mut session = wubi_session();
@@ -2760,7 +2760,7 @@ fn first_ma(session: &mut Session) -> String {
 
 /// 带着应用告诉的光标前的字按一个键（读得到周围文字的输入框）。
 fn key_with_surrounding(sym: u32, before: Option<char>) -> Key {
-    use wowtype_core::session::key_hints::SURROUNDING;
+    use mytype_core::session::key_hints::SURROUNDING;
     Key {
         prev_char: before,
         hints: SURROUNDING,
@@ -2842,9 +2842,9 @@ fn context_is_checked_against_surrounding_text() {
 
 #[test]
 fn abandoning_never_commits() {
-    use wowtype_core::session::Mode;
+    use mytype_core::session::Mode;
     // 失去焦点、应用重置（外壳调 reset(false)）：拼音、五笔码、双拼、选了一半的句子都丢掉，
-    // 什么也不上屏（fcitx5 那边编辑区标了 DontCommit，工具包也不会自己把编辑区上屏）
+    // 什么也不上屏（那边编辑区标了 DontCommit，工具包也不会自己把编辑区上屏）
     let mut session = with(engine());
     type_keys(&mut session, "nihaozhongguo");
     choose_text(&mut session, "你好");

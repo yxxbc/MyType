@@ -11,9 +11,9 @@
         <os-version min="12.0"/>
     </allowed-os-versions>
     <choices-outline>
-        <line choice="wowtype"/>
+        <line choice="mytype"/>
     </choices-outline>
-    <choice id="wowtype" title="MyType" visible="false">
+    <choice id="mytype" title="MyType" visible="false">
         <pkg-ref id="io.github.yxxbc.inputmethod.MyType.pkg"/>
     </choice>
     <pkg-ref id="io.github.yxxbc.inputmethod.MyType.pkg" version="@VERSION@" onConclusion="none">MyType-component.pkg</pkg-ref>

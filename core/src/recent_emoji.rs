@@ -1,5 +1,5 @@
 //! 最近用过的 emoji（表情面板不搜索时排最前）：进程内一份，所有输入框共用，最多
-//! [`MAX`] 个，最近的在前。外壳给一个文件路径（Linux 的 `~/.local/share/wowtype/emoji-recent.txt`、
+//! [`MAX`] 个，最近的在前。外壳给一个文件路径（旧版的 `~/Library/Application Support/MyType/emoji-recent.txt`、
 //! macOS 数据目录下同名文件），一行一个，每次记下一个就整份写回去。
 
 use std::path::PathBuf;

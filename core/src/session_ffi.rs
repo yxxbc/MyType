@@ -1,6 +1,6 @@
-//! 输入会话的 C 接口（`wowtype_session_*`），见 core/include/wowtype_core.h 和 docs/ABI.md。
+//! 输入会话的 C 接口（`mytype_session_*`），见 core/include/mytype_core.h 和 docs/ABI.md。
 //!
-//! 会话返回的指针（`WowtypeFrame` 和里面的字符串、过渡函数返回的字符串）归会话所有，
+//! 会话返回的指针（`MyTypeFrame` 和里面的字符串、过渡函数返回的字符串）归会话所有，
 //! 在同一个会话的下一次调用前有效。
 
 #![allow(clippy::missing_safety_doc)]
@@ -11,26 +11,26 @@ use std::os::raw::{c_char, c_int};
 use std::panic;
 use std::ptr;
 
-use crate::ffi::{set_last_error, WowtypeEngineHandle};
+use crate::ffi::{set_last_error, MyTypeEngineHandle};
 use crate::symbols::PunctStyle;
 use crate::session::{
     ArrowKeys, Candidate, CandidateKind, Config, Frame, Key, KeyAction, Mode, Panel, SelectKeys,
     Session, ShiftToggle, Tool,
 };
 
-/// 一次按键（C 布局）。`size` 是外壳编译时的 `sizeof(WowtypeKey)`：
+/// 一次按键（C 布局）。`size` 是外壳编译时的 `sizeof(MyTypeKey)`：
 /// 以后在末尾加字段，旧外壳传的 size 小，没传的字段当 0。
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
-pub struct WowtypeKey {
+pub struct MyTypeKey {
     pub size: u32,
     pub keysym: u32,
     pub modifiers: u32,
     pub release: u32,
     pub prev_char: u32,
-    /// `WOWTYPE_KEY_ACTION_*`：外壳认出来的全局热键、候选框上的翻页按钮。
+    /// `MYTYPE_KEY_ACTION_*`：外壳认出来的全局热键、候选框上的翻页按钮。
     pub action: u32,
-    /// 1.10 起：`WOWTYPE_KEY_HINT_*`。
+    /// 1.10 起：`MYTYPE_KEY_HINT_*`。
     pub hints: u32,
     /// 1.10 起：按键码，不知道给 0。
     pub code: u32,
@@ -40,17 +40,17 @@ pub struct WowtypeKey {
     pub time_ms: u64,
 }
 
-pub const WOWTYPE_KEY_HINT_NO_AUTO_SPACE: u32 = crate::session::key_hints::NO_AUTO_SPACE;
-pub const WOWTYPE_KEY_HINT_PANEL_OPEN: u32 = crate::session::key_hints::PANEL_OPEN;
-pub const WOWTYPE_KEY_HINT_NO_TRANSLATE: u32 = crate::session::key_hints::NO_TRANSLATE;
-pub const WOWTYPE_KEY_HINT_SURROUNDING: u32 = crate::session::key_hints::SURROUNDING;
+pub const MYTYPE_KEY_HINT_NO_AUTO_SPACE: u32 = crate::session::key_hints::NO_AUTO_SPACE;
+pub const MYTYPE_KEY_HINT_PANEL_OPEN: u32 = crate::session::key_hints::PANEL_OPEN;
+pub const MYTYPE_KEY_HINT_NO_TRANSLATE: u32 = crate::session::key_hints::NO_TRANSLATE;
+pub const MYTYPE_KEY_HINT_SURROUNDING: u32 = crate::session::key_hints::SURROUNDING;
 
 /// 外壳自己的翻译器（C 布局，1.10 起）：macOS 用它把自己的翻译器（测试里是假的）交给会话。
 /// 函数都不阻塞。poll 把这次的原文、译文、出错原因写进三个出参（在下一次 poll 前有效），
-/// 返回 `WOWTYPE_TRANSLATE_*`；tag 返回方向标签（下一次 tag 前有效）。
+/// 返回 `MYTYPE_TRANSLATE_*`；tag 返回方向标签（下一次 tag 前有效）。
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct WowtypeTranslateBackend {
+pub struct MyTypeTranslateBackend {
     pub size: u32,
     pub user: *mut std::ffi::c_void,
     pub start: Option<unsafe extern "C" fn(user: *mut std::ffi::c_void, text: *const c_char)>,
@@ -66,7 +66,7 @@ pub struct WowtypeTranslateBackend {
     pub tag: Option<unsafe extern "C" fn(user: *mut std::ffi::c_void, text: *const c_char) -> *const c_char>,
 }
 
-impl Default for WowtypeTranslateBackend {
+impl Default for MyTypeTranslateBackend {
     fn default() -> Self {
         Self {
             size: 0,
@@ -80,7 +80,7 @@ impl Default for WowtypeTranslateBackend {
 }
 
 /// 把外壳的函数表包成会话用的翻译器。
-struct CBackend(WowtypeTranslateBackend);
+struct CBackend(MyTypeTranslateBackend);
 
 impl crate::session::TranslateBackend for CBackend {
     fn start(&self, text: &str) {
@@ -124,76 +124,76 @@ impl crate::session::TranslateBackend for CBackend {
     }
 }
 
-pub const WOWTYPE_PANEL_NORMAL: c_int = 0;
-pub const WOWTYPE_PANEL_EXPANDED: c_int = 1;
-pub const WOWTYPE_PANEL_EMOJI: c_int = 2;
-pub const WOWTYPE_PANEL_TOOL: c_int = 3;
+pub const MYTYPE_PANEL_NORMAL: c_int = 0;
+pub const MYTYPE_PANEL_EXPANDED: c_int = 1;
+pub const MYTYPE_PANEL_EMOJI: c_int = 2;
+pub const MYTYPE_PANEL_TOOL: c_int = 3;
 
-pub const WOWTYPE_TOOL_NONE: c_int = 0;
-pub const WOWTYPE_TOOL_MENU: c_int = 1;
-pub const WOWTYPE_TOOL_CLIPBOARD: c_int = 2;
-pub const WOWTYPE_TOOL_PHRASES: c_int = 3;
-pub const WOWTYPE_TOOL_SYMBOLS: c_int = 4;
-pub const WOWTYPE_TOOL_EMOJI: c_int = 5;
+pub const MYTYPE_TOOL_NONE: c_int = 0;
+pub const MYTYPE_TOOL_MENU: c_int = 1;
+pub const MYTYPE_TOOL_CLIPBOARD: c_int = 2;
+pub const MYTYPE_TOOL_PHRASES: c_int = 3;
+pub const MYTYPE_TOOL_SYMBOLS: c_int = 4;
+pub const MYTYPE_TOOL_EMOJI: c_int = 5;
 
-pub const WOWTYPE_MODE_CHINESE: c_int = 0;
-pub const WOWTYPE_MODE_ENGLISH: c_int = 1;
-pub const WOWTYPE_MODE_TRANSLATE: c_int = 2;
+pub const MYTYPE_MODE_CHINESE: c_int = 0;
+pub const MYTYPE_MODE_ENGLISH: c_int = 1;
+pub const MYTYPE_MODE_TRANSLATE: c_int = 2;
 
 fn mode_to_c(mode: Mode) -> c_int {
     match mode {
-        Mode::Chinese => WOWTYPE_MODE_CHINESE,
-        Mode::English => WOWTYPE_MODE_ENGLISH,
-        Mode::Translate => WOWTYPE_MODE_TRANSLATE,
+        Mode::Chinese => MYTYPE_MODE_CHINESE,
+        Mode::English => MYTYPE_MODE_ENGLISH,
+        Mode::Translate => MYTYPE_MODE_TRANSLATE,
     }
 }
 
 fn mode_from_c(raw: c_int) -> Mode {
     match raw {
-        WOWTYPE_MODE_ENGLISH => Mode::English,
-        WOWTYPE_MODE_TRANSLATE => Mode::Translate,
+        MYTYPE_MODE_ENGLISH => Mode::English,
+        MYTYPE_MODE_TRANSLATE => Mode::Translate,
         _ => Mode::Chinese,
     }
 }
 
-pub const WOWTYPE_SHIFT_TOGGLE_BOTH: c_int = 0;
-pub const WOWTYPE_SHIFT_TOGGLE_LEFT: c_int = 1;
-pub const WOWTYPE_SHIFT_TOGGLE_RIGHT: c_int = 2;
-pub const WOWTYPE_SHIFT_TOGGLE_OFF: c_int = 3;
+pub const MYTYPE_SHIFT_TOGGLE_BOTH: c_int = 0;
+pub const MYTYPE_SHIFT_TOGGLE_LEFT: c_int = 1;
+pub const MYTYPE_SHIFT_TOGGLE_RIGHT: c_int = 2;
+pub const MYTYPE_SHIFT_TOGGLE_OFF: c_int = 3;
 
-pub const WOWTYPE_KEY_ACTION_NONE: u32 = 0;
-pub const WOWTYPE_KEY_ACTION_PREV_PAGE: u32 = 1;
-pub const WOWTYPE_KEY_ACTION_NEXT_PAGE: u32 = 2;
-pub const WOWTYPE_KEY_ACTION_PREV_CANDIDATE: u32 = 3;
-pub const WOWTYPE_KEY_ACTION_NEXT_CANDIDATE: u32 = 4;
-pub const WOWTYPE_KEY_ACTION_OBSERVE: u32 = 5;
-pub const WOWTYPE_KEY_ACTION_TOGGLE_MODE: u32 = 6;
-pub const WOWTYPE_KEY_ACTION_TOGGLE_TRANSLATE: u32 = 7;
+pub const MYTYPE_KEY_ACTION_NONE: u32 = 0;
+pub const MYTYPE_KEY_ACTION_PREV_PAGE: u32 = 1;
+pub const MYTYPE_KEY_ACTION_NEXT_PAGE: u32 = 2;
+pub const MYTYPE_KEY_ACTION_PREV_CANDIDATE: u32 = 3;
+pub const MYTYPE_KEY_ACTION_NEXT_CANDIDATE: u32 = 4;
+pub const MYTYPE_KEY_ACTION_OBSERVE: u32 = 5;
+pub const MYTYPE_KEY_ACTION_TOGGLE_MODE: u32 = 6;
+pub const MYTYPE_KEY_ACTION_TOGGLE_TRANSLATE: u32 = 7;
 
 fn key_action(raw: u32) -> KeyAction {
     match raw {
-        WOWTYPE_KEY_ACTION_PREV_PAGE => KeyAction::PrevPage,
-        WOWTYPE_KEY_ACTION_NEXT_PAGE => KeyAction::NextPage,
-        WOWTYPE_KEY_ACTION_PREV_CANDIDATE => KeyAction::PrevCandidate,
-        WOWTYPE_KEY_ACTION_NEXT_CANDIDATE => KeyAction::NextCandidate,
-        WOWTYPE_KEY_ACTION_OBSERVE => KeyAction::Observe,
-        WOWTYPE_KEY_ACTION_TOGGLE_MODE => KeyAction::ToggleMode,
-        WOWTYPE_KEY_ACTION_TOGGLE_TRANSLATE => KeyAction::ToggleTranslate,
+        MYTYPE_KEY_ACTION_PREV_PAGE => KeyAction::PrevPage,
+        MYTYPE_KEY_ACTION_NEXT_PAGE => KeyAction::NextPage,
+        MYTYPE_KEY_ACTION_PREV_CANDIDATE => KeyAction::PrevCandidate,
+        MYTYPE_KEY_ACTION_NEXT_CANDIDATE => KeyAction::NextCandidate,
+        MYTYPE_KEY_ACTION_OBSERVE => KeyAction::Observe,
+        MYTYPE_KEY_ACTION_TOGGLE_MODE => KeyAction::ToggleMode,
+        MYTYPE_KEY_ACTION_TOGGLE_TRANSLATE => KeyAction::ToggleTranslate,
         _ => KeyAction::None,
     }
 }
 
-pub const WOWTYPE_SELECT_KEYS_OFF: c_int = 0;
-pub const WOWTYPE_SELECT_KEYS_SEMICOLON: c_int = 1;
-pub const WOWTYPE_SELECT_KEYS_SEMICOLON_QUOTE: c_int = 2;
+pub const MYTYPE_SELECT_KEYS_OFF: c_int = 0;
+pub const MYTYPE_SELECT_KEYS_SEMICOLON: c_int = 1;
+pub const MYTYPE_SELECT_KEYS_SEMICOLON_QUOTE: c_int = 2;
 
-pub const WOWTYPE_ARROW_KEYS_CANDIDATES: c_int = 0;
-pub const WOWTYPE_ARROW_KEYS_CARET: c_int = 1;
+pub const MYTYPE_ARROW_KEYS_CANDIDATES: c_int = 0;
+pub const MYTYPE_ARROW_KEYS_CARET: c_int = 1;
 
 /// 会话的设置（C 布局）。外壳没填的字段（size 比我们认识的短）用默认值。
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct WowtypeSessionConfig {
+pub struct MyTypeSessionConfig {
     pub size: u32,
     /// 一页几个候选；0 用默认（9）。
     pub page_size: u32,
@@ -202,9 +202,9 @@ pub struct WowtypeSessionConfig {
     pub emoji_suggest: c_int,
     /// 候选横排（默认 1）。
     pub horizontal: c_int,
-    /// 翻页键，`WOWTYPE_PAGE_KEYS_*` 位掩码（默认 - =）。
+    /// 翻页键，`MYTYPE_PAGE_KEYS_*` 位掩码（默认 - =）。
     pub page_keys: u32,
-    /// `WOWTYPE_SELECT_KEYS_*`（默认关）。
+    /// `MYTYPE_SELECT_KEYS_*`（默认关）。
     pub select_keys: c_int,
     /// 1.8 起：以词定字（`[ ]` 取候选的第一个、最后一个字），默认 1。
     pub pick_char: c_int,
@@ -212,7 +212,7 @@ pub struct WowtypeSessionConfig {
     pub punct_style: c_int,
     /// 1.10 起：自动补空格，`autospace::LETTERS | DIGITS`，0 关。
     pub auto_space: u32,
-    /// 1.10 起：`WOWTYPE_SHIFT_TOGGLE_*`，默认两边都行。
+    /// 1.10 起：`MYTYPE_SHIFT_TOGGLE_*`，默认两边都行。
     pub shift_toggle: c_int,
     /// 1.10 起：按住 Shift 多久以内松开算单按（毫秒），0 用默认（500）。
     pub shift_tap_ms: u32,
@@ -224,7 +224,7 @@ pub struct WowtypeSessionConfig {
     pub clipboard_history: c_int,
     /// 1.10 起：双拼时编辑区显示打的键，不翻成全拼，默认 0。
     pub shuangpin_keys: c_int,
-    /// 1.10 起：打字途中方向键做什么，`WOWTYPE_ARROW_KEYS_*`（#129），默认挑候选。
+    /// 1.10 起：打字途中方向键做什么，`MYTYPE_ARROW_KEYS_*`（#129），默认挑候选。
     pub arrow_keys: c_int,
     /// 1.10 起：五笔（引擎要载入五笔码表），默认 0。
     pub wubi: c_int,
@@ -236,11 +236,11 @@ pub struct WowtypeSessionConfig {
     pub translate_key: c_int,
 }
 
-impl Default for WowtypeSessionConfig {
+impl Default for MyTypeSessionConfig {
     fn default() -> Self {
         let config = Config::default();
         Self {
-            size: size_of::<WowtypeSessionConfig>() as u32,
+            size: size_of::<MyTypeSessionConfig>() as u32,
             page_size: config.page_size as u32,
             calculator: c_int::from(config.calculator),
             date_time: c_int::from(config.date_time),
@@ -248,18 +248,18 @@ impl Default for WowtypeSessionConfig {
             horizontal: c_int::from(config.horizontal),
             page_keys: config.page_keys,
             select_keys: match config.select_keys {
-                SelectKeys::Off => WOWTYPE_SELECT_KEYS_OFF,
-                SelectKeys::Semicolon => WOWTYPE_SELECT_KEYS_SEMICOLON,
-                SelectKeys::SemicolonQuote => WOWTYPE_SELECT_KEYS_SEMICOLON_QUOTE,
+                SelectKeys::Off => MYTYPE_SELECT_KEYS_OFF,
+                SelectKeys::Semicolon => MYTYPE_SELECT_KEYS_SEMICOLON,
+                SelectKeys::SemicolonQuote => MYTYPE_SELECT_KEYS_SEMICOLON_QUOTE,
             },
             pick_char: c_int::from(config.pick_char),
             punct_style: c_int::from(config.punct_style == PunctStyle::Halfwidth),
             auto_space: config.auto_space,
             shift_toggle: match config.shift_toggle {
-                ShiftToggle::Both => WOWTYPE_SHIFT_TOGGLE_BOTH,
-                ShiftToggle::Left => WOWTYPE_SHIFT_TOGGLE_LEFT,
-                ShiftToggle::Right => WOWTYPE_SHIFT_TOGGLE_RIGHT,
-                ShiftToggle::Off => WOWTYPE_SHIFT_TOGGLE_OFF,
+                ShiftToggle::Both => MYTYPE_SHIFT_TOGGLE_BOTH,
+                ShiftToggle::Left => MYTYPE_SHIFT_TOGGLE_LEFT,
+                ShiftToggle::Right => MYTYPE_SHIFT_TOGGLE_RIGHT,
+                ShiftToggle::Off => MYTYPE_SHIFT_TOGGLE_OFF,
             },
             shift_tap_ms: config.shift_tap_ms,
             translate_mode: c_int::from(config.translate_mode),
@@ -267,8 +267,8 @@ impl Default for WowtypeSessionConfig {
             clipboard_history: c_int::from(config.clipboard_history),
             shuangpin_keys: c_int::from(config.shuangpin_keys),
             arrow_keys: match config.arrow_keys {
-                ArrowKeys::Candidates => WOWTYPE_ARROW_KEYS_CANDIDATES,
-                ArrowKeys::Caret => WOWTYPE_ARROW_KEYS_CARET,
+                ArrowKeys::Candidates => MYTYPE_ARROW_KEYS_CANDIDATES,
+                ArrowKeys::Caret => MYTYPE_ARROW_KEYS_CARET,
             },
             wubi: c_int::from(config.wubi),
             wubi_auto_commit: c_int::from(config.wubi_auto_commit),
@@ -278,7 +278,7 @@ impl Default for WowtypeSessionConfig {
     }
 }
 
-impl WowtypeSessionConfig {
+impl MyTypeSessionConfig {
     fn to_config(self) -> Config {
         Config {
             page_size: if self.page_size == 0 {
@@ -292,8 +292,8 @@ impl WowtypeSessionConfig {
             horizontal: self.horizontal != 0,
             page_keys: self.page_keys,
             select_keys: match self.select_keys {
-                WOWTYPE_SELECT_KEYS_SEMICOLON => SelectKeys::Semicolon,
-                WOWTYPE_SELECT_KEYS_SEMICOLON_QUOTE => SelectKeys::SemicolonQuote,
+                MYTYPE_SELECT_KEYS_SEMICOLON => SelectKeys::Semicolon,
+                MYTYPE_SELECT_KEYS_SEMICOLON_QUOTE => SelectKeys::SemicolonQuote,
                 _ => SelectKeys::Off,
             },
             pick_char: self.pick_char != 0,
@@ -304,9 +304,9 @@ impl WowtypeSessionConfig {
             },
             auto_space: self.auto_space,
             shift_toggle: match self.shift_toggle {
-                WOWTYPE_SHIFT_TOGGLE_LEFT => ShiftToggle::Left,
-                WOWTYPE_SHIFT_TOGGLE_RIGHT => ShiftToggle::Right,
-                WOWTYPE_SHIFT_TOGGLE_OFF => ShiftToggle::Off,
+                MYTYPE_SHIFT_TOGGLE_LEFT => ShiftToggle::Left,
+                MYTYPE_SHIFT_TOGGLE_RIGHT => ShiftToggle::Right,
+                MYTYPE_SHIFT_TOGGLE_OFF => ShiftToggle::Off,
                 _ => ShiftToggle::Both,
             },
             shift_tap_ms: if self.shift_tap_ms == 0 {
@@ -320,7 +320,7 @@ impl WowtypeSessionConfig {
             clipboard_history: self.clipboard_history != 0,
             shuangpin_keys: self.shuangpin_keys != 0,
             arrow_keys: match self.arrow_keys {
-                WOWTYPE_ARROW_KEYS_CARET => ArrowKeys::Caret,
+                MYTYPE_ARROW_KEYS_CARET => ArrowKeys::Caret,
                 _ => ArrowKeys::Candidates,
             },
             wubi: self.wubi != 0,
@@ -331,10 +331,10 @@ impl WowtypeSessionConfig {
     }
 }
 
-/// 过渡：候选框的状态（C 布局），fcitx5 外壳按它摆自己的候选列表。
+/// 过渡：候选框的状态（C 布局），外壳按它摆自己的候选列表。
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
-pub struct WowtypeSessionView {
+pub struct MyTypeSessionView {
     pub size: u32,
     pub page: usize,
     pub cursor: usize,
@@ -347,7 +347,7 @@ pub struct WowtypeSessionView {
 /// 过渡：一个候选的全部信息（C 布局），字段含义见头文件。
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct WowtypeCandidateInfo {
+pub struct MyTypeCandidateInfo {
     pub size: u32,
     pub text: *const c_char,
     pub pinyin: *const c_char,
@@ -359,9 +359,9 @@ pub struct WowtypeCandidateInfo {
     pub comment: *const c_char,
 }
 
-pub const WOWTYPE_CAND_WORD: c_int = 0;
-pub const WOWTYPE_CAND_PLAIN: c_int = 1;
-pub const WOWTYPE_CAND_EMOJI: c_int = 2;
+pub const MYTYPE_CAND_WORD: c_int = 0;
+pub const MYTYPE_CAND_PLAIN: c_int = 1;
+pub const MYTYPE_CAND_EMOJI: c_int = 2;
 
 /// 一个候选的 C 字符串（随候选重算重建）。
 struct CCandidate {
@@ -375,8 +375,8 @@ struct CCandidate {
 }
 
 impl CCandidate {
-    fn info(&self) -> WowtypeCandidateInfo {
-        WowtypeCandidateInfo {
+    fn info(&self) -> MyTypeCandidateInfo {
+        MyTypeCandidateInfo {
             size: 0,
             text: self.text.as_ptr(),
             pinyin: self.pinyin.as_ptr(),
@@ -397,9 +397,9 @@ impl CCandidate {
             comment: to_c(&c.comment),
             consumed: c.consumed,
             kind: match c.kind {
-                CandidateKind::Word => WOWTYPE_CAND_WORD,
-                CandidateKind::Plain => WOWTYPE_CAND_PLAIN,
-                CandidateKind::Emoji => WOWTYPE_CAND_EMOJI,
+                CandidateKind::Word => MYTYPE_CAND_WORD,
+                CandidateKind::Plain => MYTYPE_CAND_PLAIN,
+                CandidateKind::Emoji => MYTYPE_CAND_EMOJI,
             },
         }
     }
@@ -407,7 +407,7 @@ impl CCandidate {
 
 /// 一次调用之后外壳要做的事（C 布局），字段含义见头文件。
 #[repr(C)]
-pub struct WowtypeFrame {
+pub struct MyTypeFrame {
     pub size: u32,
     pub handled: c_int,
     pub commit: *const c_char,
@@ -424,7 +424,7 @@ pub struct WowtypeFrame {
     pub forgot: c_int,
     /// 1.10 起：这次上屏里有引擎学到的选词。
     pub learned: c_int,
-    /// 1.10 起：这次调用以后的输入模式，`WOWTYPE_MODE_*`。
+    /// 1.10 起：这次调用以后的输入模式，`MYTYPE_MODE_*`。
     pub mode: c_int,
     /// 1.10 起：这次调用切换了输入模式。
     pub mode_changed: c_int,
@@ -438,10 +438,10 @@ pub struct WowtypeFrame {
     pub translate_done: c_int,
 }
 
-impl Default for WowtypeFrame {
+impl Default for MyTypeFrame {
     fn default() -> Self {
         Self {
-            size: size_of::<WowtypeFrame>() as u32,
+            size: size_of::<MyTypeFrame>() as u32,
             handled: 0,
             commit: ptr::null(),
             preedit: ptr::null(),
@@ -455,7 +455,7 @@ impl Default for WowtypeFrame {
             wake_after_ms: 0,
             forgot: 0,
             learned: 0,
-            mode: WOWTYPE_MODE_CHINESE,
+            mode: MYTYPE_MODE_CHINESE,
             mode_changed: 0,
             translating: 0,
             translate_source: EMPTY.as_ptr(),
@@ -467,19 +467,19 @@ impl Default for WowtypeFrame {
     }
 }
 
-/// 会话句柄。引擎借用的是外壳的 `WowtypeEngineHandle`，外壳保证它比会话活得久
+/// 会话句柄。引擎借用的是外壳的 `MyTypeEngineHandle`，外壳保证它比会话活得久
 /// （或者先 set_engine(NULL)）。
-pub struct WowtypeSession {
+pub struct MyTypeSession {
     session: Session<'static>,
     /// 候选的 C 字符串，和 `c_generation` 那次重算的候选对应。
     c_candidates: Vec<CCandidate>,
     c_generation: u64,
-    frame: WowtypeFrame,
+    frame: MyTypeFrame,
     commit: Option<CString>,
     preedit: CString,
-    /// frame 里显示的候选在全部候选里的起点（`wowtype_session_candidate` 用）。
+    /// frame 里显示的候选在全部候选里的起点（`mytype_session_candidate` 用）。
     shown_start: usize,
-    /// 上一次上屏是选的哪个候选（以前的 `wowtype_session_last_choice` 用，现在只给调试看）。
+    /// 上一次上屏是选的哪个候选（以前的 `mytype_session_last_choice` 用，现在只给调试看）。
     last_choice: Option<CCandidate>,
     /// 过渡函数返回的字符串。
     text: CString,
@@ -525,22 +525,22 @@ unsafe fn write_sized<T: Copy>(out: *mut T, mut value: T) {
     }
 }
 
-impl WowtypeSession {
-    fn publish(&mut self, frame: Frame) -> *const WowtypeFrame {
+impl MyTypeSession {
+    fn publish(&mut self, frame: Frame) -> *const MyTypeFrame {
         self.commit = frame.commit.as_deref().map(to_c);
         self.preedit = to_c(&frame.preedit);
         self.shown_start = frame.cand_start;
         self.last_choice = self.session.last_choice().map(CCandidate::new);
-        self.frame = WowtypeFrame {
+        self.frame = MyTypeFrame {
             handled: c_int::from(frame.handled),
             commit: self.commit.as_ref().map_or(ptr::null(), |c| c.as_ptr()),
             preedit: self.preedit.as_ptr(),
             preedit_cursor: frame.preedit_cursor.try_into().unwrap_or(c_int::MAX),
             panel: match frame.panel {
-                Panel::Normal => WOWTYPE_PANEL_NORMAL,
-                Panel::Expanded => WOWTYPE_PANEL_EXPANDED,
-                Panel::Emoji => WOWTYPE_PANEL_EMOJI,
-                Panel::Tool => WOWTYPE_PANEL_TOOL,
+                Panel::Normal => MYTYPE_PANEL_NORMAL,
+                Panel::Expanded => MYTYPE_PANEL_EXPANDED,
+                Panel::Emoji => MYTYPE_PANEL_EMOJI,
+                Panel::Tool => MYTYPE_PANEL_TOOL,
             },
             cand_count: frame.cand_count,
             cand_cursor: frame
@@ -554,7 +554,7 @@ impl WowtypeSession {
             mode: mode_to_c(frame.mode),
             mode_changed: c_int::from(frame.mode_changed),
             wake_after_ms: frame.wake_after_ms,
-            ..WowtypeFrame::default()
+            ..MyTypeFrame::default()
         };
         if !frame.aux.is_empty() {
             self.aux = to_c(&frame.aux);
@@ -582,7 +582,7 @@ impl WowtypeSession {
         &mut self,
         what: &str,
         f: impl FnOnce(&mut Session<'static>) -> Frame,
-    ) -> *const WowtypeFrame {
+    ) -> *const MyTypeFrame {
         let inner = &mut self.session;
         match panic::catch_unwind(panic::AssertUnwindSafe(|| f(inner))) {
             Ok(frame) => self.publish(frame),
@@ -599,7 +599,7 @@ impl WowtypeSession {
     }
 
     /// 现在的编辑区；算候选时出了 panic 就当没有候选。
-    fn current(&mut self, handled: bool) -> *const WowtypeFrame {
+    fn current(&mut self, handled: bool) -> *const MyTypeFrame {
         let inner = &mut self.session;
         let frame = match panic::catch_unwind(panic::AssertUnwindSafe(|| inner.frame(handled))) {
             Ok(frame) => frame,
@@ -640,27 +640,27 @@ impl WowtypeSession {
     }
 }
 
-unsafe fn engine_ref(engine: *mut WowtypeEngineHandle) -> Option<&'static crate::Engine> {
+unsafe fn engine_ref(engine: *mut MyTypeEngineHandle) -> Option<&'static crate::Engine> {
     unsafe { engine.as_ref() }.map(|handle| &handle.engine)
 }
 
 /// 建会话。engine 可以传 NULL（外壳的词库在后台载入，载入好之前也要能打字，载入好了
 /// 用 set_engine 补上）；传了的话要比会话活得久。config 可以传 NULL（全用默认）。
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_session_new(
-    engine: *mut WowtypeEngineHandle,
-    config: *const WowtypeSessionConfig,
-) -> *mut WowtypeSession {
+pub unsafe extern "C" fn mytype_session_new(
+    engine: *mut MyTypeEngineHandle,
+    config: *const MyTypeSessionConfig,
+) -> *mut MyTypeSession {
     let mut session = Session::new();
     session.set_engine(unsafe { engine_ref(engine) });
     if !config.is_null() {
         session.configure(unsafe { read_sized(config, (*config).size) }.to_config());
     }
-    let mut handle = Box::new(WowtypeSession {
+    let mut handle = Box::new(MyTypeSession {
         session,
         c_candidates: Vec::new(),
         c_generation: 0,
-        frame: WowtypeFrame::default(),
+        frame: MyTypeFrame::default(),
         commit: None,
         preedit: CString::default(),
         shown_start: 0,
@@ -676,9 +676,9 @@ pub unsafe extern "C" fn wowtype_session_new(
 
 /// 换引擎（词库在后台载入好了），可以传 NULL。
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_session_set_engine(
-    session: *mut WowtypeSession,
-    engine: *mut WowtypeEngineHandle,
+pub unsafe extern "C" fn mytype_session_set_engine(
+    session: *mut MyTypeSession,
+    engine: *mut MyTypeEngineHandle,
 ) {
     if let Some(handle) = unsafe { session.as_mut() } {
         handle.session.set_engine(unsafe { engine_ref(engine) });
@@ -687,9 +687,9 @@ pub unsafe extern "C" fn wowtype_session_set_engine(
 
 /// 改设置。config 为 NULL 时全用默认。
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_session_configure(
-    session: *mut WowtypeSession,
-    config: *const WowtypeSessionConfig,
+pub unsafe extern "C" fn mytype_session_configure(
+    session: *mut MyTypeSession,
+    config: *const MyTypeSessionConfig,
 ) {
     let Some(handle) = (unsafe { session.as_mut() }) else {
         return;
@@ -704,9 +704,9 @@ pub unsafe extern "C" fn wowtype_session_configure(
 
 /// 现在的编辑区（不处理按键，handled 为 0）。session 为 NULL 时返回 NULL。
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_session_frame(
-    session: *mut WowtypeSession,
-) -> *const WowtypeFrame {
+pub unsafe extern "C" fn mytype_session_frame(
+    session: *mut MyTypeSession,
+) -> *const MyTypeFrame {
     match unsafe { session.as_mut() } {
         Some(handle) => handle.current(false),
         None => ptr::null(),
@@ -714,7 +714,7 @@ pub unsafe extern "C" fn wowtype_session_frame(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_session_free(session: *mut WowtypeSession) {
+pub unsafe extern "C" fn mytype_session_free(session: *mut MyTypeSession) {
     if !session.is_null() {
         drop(unsafe { Box::from_raw(session) });
     }
@@ -722,10 +722,10 @@ pub unsafe extern "C" fn wowtype_session_free(session: *mut WowtypeSession) {
 
 /// 处理一次按键。session 或 key 为 NULL 时返回 NULL。
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_session_key(
-    session: *mut WowtypeSession,
-    key: *const WowtypeKey,
-) -> *const WowtypeFrame {
+pub unsafe extern "C" fn mytype_session_key(
+    session: *mut MyTypeSession,
+    key: *const MyTypeKey,
+) -> *const MyTypeFrame {
     let Some(handle) = (unsafe { session.as_mut() }) else {
         return ptr::null();
     };
@@ -750,10 +750,10 @@ pub unsafe extern "C" fn wowtype_session_key(
 
 /// 选候选框里显示的第 index 个（一页，或展开面板的一屏；鼠标点候选）。序号不对时 handled 为 0。
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_session_select(
-    session: *mut WowtypeSession,
+pub unsafe extern "C" fn mytype_session_select(
+    session: *mut MyTypeSession,
     index: usize,
-) -> *const WowtypeFrame {
+) -> *const MyTypeFrame {
     let Some(handle) = (unsafe { session.as_mut() }) else {
         return ptr::null();
     };
@@ -762,8 +762,8 @@ pub unsafe extern "C" fn wowtype_session_select(
 
 /// 上一次返回的 frame 里显示的第 index 个候选（0 起，小于 cand_count）。越界或 NULL 返回 NULL。
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_session_candidate(
-    session: *mut WowtypeSession,
+pub unsafe extern "C" fn mytype_session_candidate(
+    session: *mut MyTypeSession,
     index: usize,
 ) -> *const c_char {
     unsafe { shown_candidate(session, index) }.map_or(ptr::null(), |c| c.text.as_ptr())
@@ -772,15 +772,15 @@ pub unsafe extern "C" fn wowtype_session_candidate(
 /// 上一次返回的 frame 里显示的第 index 个候选后面的小字（1.10，五笔的编码提示），没有是空串。
 /// 越界或 NULL 返回 NULL。
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_session_candidate_comment(
-    session: *mut WowtypeSession,
+pub unsafe extern "C" fn mytype_session_candidate_comment(
+    session: *mut MyTypeSession,
     index: usize,
 ) -> *const c_char {
     unsafe { shown_candidate(session, index) }.map_or(ptr::null(), |c| c.comment.as_ptr())
 }
 
 /// 上一次的 frame 里显示的第 index 个候选。
-unsafe fn shown_candidate<'a>(session: *mut WowtypeSession, index: usize) -> Option<&'a CCandidate> {
+unsafe fn shown_candidate<'a>(session: *mut MyTypeSession, index: usize) -> Option<&'a CCandidate> {
     let handle = unsafe { session.as_mut() }?;
     if index >= handle.frame.cand_count {
         return None;
@@ -791,41 +791,41 @@ unsafe fn shown_candidate<'a>(session: *mut WowtypeSession, index: usize) -> Opt
 
 /// 清空编辑区；commit_pending 非 0 时把已选的词和原始输入放进 frame->commit，为 0 是放弃（上文也作废）。
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_session_reset(
-    session: *mut WowtypeSession,
+pub unsafe extern "C" fn mytype_session_reset(
+    session: *mut MyTypeSession,
     commit_pending: c_int,
-) -> *const WowtypeFrame {
+) -> *const MyTypeFrame {
     let Some(handle) = (unsafe { session.as_mut() }) else {
         return ptr::null();
     };
     handle.run("reset", |session| session.reset(commit_pending != 0))
 }
 
-/// 切换输入模式（`WOWTYPE_MODE_*`，外部命令、默认模式、外壳全局的模式用）。切到英文时打到一半的放进
+/// 切换输入模式（`MYTYPE_MODE_*`，外部命令、默认模式、外壳全局的模式用）。切到英文时打到一半的放进
 /// frame->commit。（1.10 起）
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_session_set_mode(
-    session: *mut WowtypeSession,
+pub unsafe extern "C" fn mytype_session_set_mode(
+    session: *mut MyTypeSession,
     mode: c_int,
-) -> *const WowtypeFrame {
+) -> *const MyTypeFrame {
     let Some(handle) = (unsafe { session.as_mut() }) else {
         return ptr::null();
     };
     handle.run("set_mode", |session| session.set_mode(mode_from_c(mode)))
 }
 
-/// 现在的输入模式，`WOWTYPE_MODE_*`；session 为 NULL 时是中文。（1.10 起）
+/// 现在的输入模式，`MYTYPE_MODE_*`；session 为 NULL 时是中文。（1.10 起）
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_session_mode(session: *const WowtypeSession) -> c_int {
-    unsafe { session.as_ref() }.map_or(WOWTYPE_MODE_CHINESE, |handle| mode_to_c(handle.session.mode()))
+pub unsafe extern "C" fn mytype_session_mode(session: *const MyTypeSession) -> c_int {
+    unsafe { session.as_ref() }.map_or(MYTYPE_MODE_CHINESE, |handle| mode_to_c(handle.session.mode()))
 }
 
-/// 互译用核心的翻译器（Linux 外壳）；NULL 表示没有翻译器。翻译器要比会话活得久，
+/// 互译用核心的翻译器；NULL 表示没有翻译器。翻译器要比会话活得久，
 /// 释放前先设成 NULL。换掉时攒着的原文丢掉。（1.10 起）
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_session_set_translator(
-    session: *mut WowtypeSession,
-    translator: *mut crate::translate_ffi::WowtypeTranslator,
+pub unsafe extern "C" fn mytype_session_set_translator(
+    session: *mut MyTypeSession,
+    translator: *mut crate::translate_ffi::MyTypeTranslator,
 ) {
     let Some(handle) = (unsafe { session.as_mut() }) else {
         return;
@@ -843,9 +843,9 @@ pub unsafe extern "C" fn wowtype_session_set_translator(
 /// 互译用外壳自己的翻译器（函数表，macOS 外壳）；NULL 表示没有翻译器。表里的 user 要比会话活得久，
 /// 释放前先设成 NULL。换掉时攒着的原文丢掉。（1.10 起）
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_session_set_translate_backend(
-    session: *mut WowtypeSession,
-    backend: *const WowtypeTranslateBackend,
+pub unsafe extern "C" fn mytype_session_set_translate_backend(
+    session: *mut MyTypeSession,
+    backend: *const MyTypeTranslateBackend,
 ) {
     let Some(handle) = (unsafe { session.as_mut() }) else {
         return;
@@ -865,12 +865,12 @@ pub unsafe extern "C" fn wowtype_session_set_translate_backend(
 }
 
 /// 定时器到了（frame->wake_after_ms 排的）：该发翻译请求的发，按过回车且译好了的放进 frame->commit。
-/// now_ms 是单调时钟的毫秒数（和 WowtypeKey.time_ms 同一个时钟）。（1.10 起）
+/// now_ms 是单调时钟的毫秒数（和 MyTypeKey.time_ms 同一个时钟）。（1.10 起）
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_session_tick(
-    session: *mut WowtypeSession,
+pub unsafe extern "C" fn mytype_session_tick(
+    session: *mut MyTypeSession,
     now_ms: u64,
-) -> *const WowtypeFrame {
+) -> *const MyTypeFrame {
     let Some(handle) = (unsafe { session.as_mut() }) else {
         return ptr::null();
     };
@@ -880,11 +880,11 @@ pub unsafe extern "C" fn wowtype_session_tick(
 /// 外壳要上屏一段与拼音无关的字（工具栏、表情面板、语音识别结果）：互译时进原文，否则补好空格放进
 /// frame->commit。prev_char 是应用里光标前的字，读不到给 0。（1.10 起）
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_session_commit_text(
-    session: *mut WowtypeSession,
+pub unsafe extern "C" fn mytype_session_commit_text(
+    session: *mut MyTypeSession,
     text: *const c_char,
     prev_char: u32,
-) -> *const WowtypeFrame {
+) -> *const MyTypeFrame {
     let Some(handle) = (unsafe { session.as_mut() }) else {
         return ptr::null();
     };
@@ -895,31 +895,31 @@ pub unsafe extern "C" fn wowtype_session_commit_text(
 
 /// 表情面板快捷键（外壳按自己的设置认出来）：开着就关上；打了一半的拼音拿来当搜索词。（1.10 起）
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_session_toggle_emoji_panel(
-    session: *mut WowtypeSession,
-) -> *const WowtypeFrame {
+pub unsafe extern "C" fn mytype_session_toggle_emoji_panel(
+    session: *mut MyTypeSession,
+) -> *const MyTypeFrame {
     let Some(handle) = (unsafe { session.as_mut() }) else {
         return ptr::null();
     };
     handle.run("toggle_emoji_panel", |session| session.toggle_emoji_panel())
 }
 
-/// 打开工具栏的一页或表情面板（`WOWTYPE_TOOL_*`，外壳的菜单、按钮用；v + 空格会话自己开）。
-/// `WOWTYPE_TOOL_NONE` 关上。（1.10 起）
+/// 打开工具栏的一页或表情面板（`MYTYPE_TOOL_*`，外壳的菜单、按钮用；v + 空格会话自己开）。
+/// `MYTYPE_TOOL_NONE` 关上。（1.10 起）
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_session_open_tool(
-    session: *mut WowtypeSession,
+pub unsafe extern "C" fn mytype_session_open_tool(
+    session: *mut MyTypeSession,
     tool: c_int,
-) -> *const WowtypeFrame {
+) -> *const MyTypeFrame {
     let Some(handle) = (unsafe { session.as_mut() }) else {
         return ptr::null();
     };
     let tool = match tool {
-        WOWTYPE_TOOL_MENU => Some(Tool::Menu),
-        WOWTYPE_TOOL_CLIPBOARD => Some(Tool::Clipboard),
-        WOWTYPE_TOOL_PHRASES => Some(Tool::Phrases),
-        WOWTYPE_TOOL_SYMBOLS => Some(Tool::Emoji { symbols: true }),
-        WOWTYPE_TOOL_EMOJI => Some(Tool::Emoji { symbols: false }),
+        MYTYPE_TOOL_MENU => Some(Tool::Menu),
+        MYTYPE_TOOL_CLIPBOARD => Some(Tool::Clipboard),
+        MYTYPE_TOOL_PHRASES => Some(Tool::Phrases),
+        MYTYPE_TOOL_SYMBOLS => Some(Tool::Emoji { symbols: true }),
+        MYTYPE_TOOL_EMOJI => Some(Tool::Emoji { symbols: false }),
         _ => None,
     };
     handle.run("open_tool", |session| match tool {
@@ -928,40 +928,40 @@ pub unsafe extern "C" fn wowtype_session_open_tool(
     })
 }
 
-/// 开着的面板，`WOWTYPE_TOOL_*`（没开是 NONE）。（1.10 起）
+/// 开着的面板，`MYTYPE_TOOL_*`（没开是 NONE）。（1.10 起）
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_session_open_panel(session: *const WowtypeSession) -> c_int {
+pub unsafe extern "C" fn mytype_session_open_panel(session: *const MyTypeSession) -> c_int {
     let Some(handle) = (unsafe { session.as_ref() }) else {
-        return WOWTYPE_TOOL_NONE;
+        return MYTYPE_TOOL_NONE;
     };
     match handle.session.open_panel() {
-        None => WOWTYPE_TOOL_NONE,
-        Some(Tool::Menu) => WOWTYPE_TOOL_MENU,
-        Some(Tool::Clipboard) => WOWTYPE_TOOL_CLIPBOARD,
-        Some(Tool::Phrases) => WOWTYPE_TOOL_PHRASES,
-        Some(Tool::Emoji { symbols: true }) => WOWTYPE_TOOL_SYMBOLS,
-        Some(Tool::Emoji { symbols: false }) => WOWTYPE_TOOL_EMOJI,
+        None => MYTYPE_TOOL_NONE,
+        Some(Tool::Menu) => MYTYPE_TOOL_MENU,
+        Some(Tool::Clipboard) => MYTYPE_TOOL_CLIPBOARD,
+        Some(Tool::Phrases) => MYTYPE_TOOL_PHRASES,
+        Some(Tool::Emoji { symbols: true }) => MYTYPE_TOOL_SYMBOLS,
+        Some(Tool::Emoji { symbols: false }) => MYTYPE_TOOL_EMOJI,
     }
 }
 
 /// 最近用过的 emoji 存在这个文件（一行一个，进程内所有会话共用；读进已有的）。
 /// NULL 或空串：只记在内存里，并清空。（1.10 起）
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_recent_emoji_path(path: *const c_char) {
+pub unsafe extern "C" fn mytype_recent_emoji_path(path: *const c_char) {
     crate::recent_emoji::set_path(&unsafe { arg(path) });
 }
 
-/// 最近用过的 emoji，最近的在前；用 wowtype_candidates_* 读取并释放。（1.10 起）
+/// 最近用过的 emoji，最近的在前；用 mytype_candidates_* 读取并释放。（1.10 起）
 #[no_mangle]
-pub extern "C" fn wowtype_recent_emoji_list() -> *mut crate::ffi::WowtypeCandidates {
+pub extern "C" fn mytype_recent_emoji_list() -> *mut crate::ffi::MyTypeCandidates {
     let texts: Vec<CString> = crate::recent_emoji::list().iter().map(|t| to_c(t)).collect();
     let scores = vec![0.0; texts.len()];
-    Box::into_raw(Box::new(crate::ffi::WowtypeCandidates::plain(texts, scores)))
+    Box::into_raw(Box::new(crate::ffi::MyTypeCandidates::plain(texts, scores)))
 }
 
 /// 攒着的原文（互译），没有是空串。在同一个会话下一次调用前有效。（1.10 起）
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_session_translate_source(session: *mut WowtypeSession) -> *const c_char {
+pub unsafe extern "C" fn mytype_session_translate_source(session: *mut MyTypeSession) -> *const c_char {
     let Some(handle) = (unsafe { session.as_mut() }) else {
         return EMPTY.as_ptr();
     };
@@ -971,9 +971,9 @@ pub unsafe extern "C" fn wowtype_session_translate_source(session: *mut WowtypeS
 
 /// 丢掉互译攒着的原文、取消这个会话的翻译请求（输入框失去焦点）。（1.10 起）
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_session_translate_clear(
-    session: *mut WowtypeSession,
-) -> *const WowtypeFrame {
+pub unsafe extern "C" fn mytype_session_translate_clear(
+    session: *mut MyTypeSession,
+) -> *const MyTypeFrame {
     let Some(handle) = (unsafe { session.as_mut() }) else {
         return ptr::null();
     };
@@ -983,11 +983,11 @@ pub unsafe extern "C" fn wowtype_session_translate_clear(
     })
 }
 
-// ---- 读会话状态、整个候选列表（fcitx5 的候选框要整个列表），见 docs/ABI.md「输入会话」----
+// ---- 读会话状态、整个候选列表（候选框要整个列表），见 docs/ABI.md「输入会话」----
 
 /// 全部原始输入（含已选词用掉的部分）。
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_session_input(session: *mut WowtypeSession) -> *const c_char {
+pub unsafe extern "C" fn mytype_session_input(session: *mut MyTypeSession) -> *const c_char {
     let Some(handle) = (unsafe { session.as_mut() }) else {
         return ptr::null();
     };
@@ -997,7 +997,7 @@ pub unsafe extern "C" fn wowtype_session_input(session: *mut WowtypeSession) -> 
 
 /// 还没选词的那部分原始输入。
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_session_remaining(session: *mut WowtypeSession) -> *const c_char {
+pub unsafe extern "C" fn mytype_session_remaining(session: *mut MyTypeSession) -> *const c_char {
     let Some(handle) = (unsafe { session.as_mut() }) else {
         return ptr::null();
     };
@@ -1007,8 +1007,8 @@ pub unsafe extern "C" fn wowtype_session_remaining(session: *mut WowtypeSession)
 
 /// 已选的词连起来。
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_session_selected_text(
-    session: *mut WowtypeSession,
+pub unsafe extern "C" fn mytype_session_selected_text(
+    session: *mut MyTypeSession,
 ) -> *const c_char {
     let Some(handle) = (unsafe { session.as_mut() }) else {
         return ptr::null();
@@ -1020,10 +1020,10 @@ pub unsafe extern "C" fn wowtype_session_selected_text(
 /// 选第 index 个候选（全部候选里的序号，不分页）：句首词进已选栈，其余上屏并记选词，
 /// 见 `Session::choose`。序号不对时 handled 为 0。
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_session_choose(
-    session: *mut WowtypeSession,
+pub unsafe extern "C" fn mytype_session_choose(
+    session: *mut MyTypeSession,
     index: usize,
-) -> *const WowtypeFrame {
+) -> *const MyTypeFrame {
     let Some(handle) = (unsafe { session.as_mut() }) else {
         return ptr::null();
     };
@@ -1032,9 +1032,9 @@ pub unsafe extern "C" fn wowtype_session_choose(
 
 /// 候选框的状态写进 out（按 out->size 写）。返回 0 成功，-1 参数为 NULL。
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_session_view(
-    session: *mut WowtypeSession,
-    out: *mut WowtypeSessionView,
+pub unsafe extern "C" fn mytype_session_view(
+    session: *mut MyTypeSession,
+    out: *mut MyTypeSessionView,
 ) -> c_int {
     let (Some(handle), false) = (unsafe { session.as_mut() }, out.is_null()) else {
         return -1;
@@ -1044,7 +1044,7 @@ pub unsafe extern "C" fn wowtype_session_view(
         set_last_error("session view panicked");
         return -1;
     };
-    let value = WowtypeSessionView {
+    let value = MyTypeSessionView {
         size: 0,
         page: view.page,
         cursor: view.cursor,
@@ -1058,17 +1058,17 @@ pub unsafe extern "C" fn wowtype_session_view(
 
 /// 全部候选的个数（不分页）。
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_session_candidate_total(session: *mut WowtypeSession) -> usize {
+pub unsafe extern "C" fn mytype_session_candidate_total(session: *mut MyTypeSession) -> usize {
     unsafe { session.as_mut() }.map_or(0, |handle| handle.c_candidates().len())
 }
 
 /// 第 index 个候选（不分页）写进 out（按 out->size 写）。返回 0 成功，-1 越界或参数为 NULL。
 /// 字符串在同一会话下一次改了编辑区或设置的调用前有效。
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_session_candidate_info(
-    session: *mut WowtypeSession,
+pub unsafe extern "C" fn mytype_session_candidate_info(
+    session: *mut MyTypeSession,
     index: usize,
-    out: *mut WowtypeCandidateInfo,
+    out: *mut MyTypeCandidateInfo,
 ) -> c_int {
     let Some(handle) = (unsafe { session.as_mut() }) else {
         return -1;
@@ -1088,13 +1088,13 @@ mod tests {
     use super::*;
     use crate::session::keysym;
 
-    fn press(session: *mut WowtypeSession, keysym: u32) -> &'static WowtypeFrame {
-        let key = WowtypeKey {
-            size: size_of::<WowtypeKey>() as u32,
+    fn press(session: *mut MyTypeSession, keysym: u32) -> &'static MyTypeFrame {
+        let key = MyTypeKey {
+            size: size_of::<MyTypeKey>() as u32,
             keysym,
-            ..WowtypeKey::default()
+            ..MyTypeKey::default()
         };
-        unsafe { &*wowtype_session_key(session, &key) }
+        unsafe { &*mytype_session_key(session, &key) }
     }
 
     fn c(ptr: *const c_char) -> String {
@@ -1104,33 +1104,33 @@ mod tests {
 
     #[test]
     fn roundtrip() {
-        let session = unsafe { wowtype_session_new(ptr::null_mut(), ptr::null()) };
+        let session = unsafe { mytype_session_new(ptr::null_mut(), ptr::null()) };
         assert!(!session.is_null());
         for ch in "nihaoma".bytes() {
             assert_eq!(press(session, u32::from(ch)).handled, 1);
         }
-        assert_eq!(c(unsafe { wowtype_session_remaining(session) }), "nihaoma");
+        assert_eq!(c(unsafe { mytype_session_remaining(session) }), "nihaoma");
         // 没有引擎：没有候选，选不了
-        assert_eq!(unsafe { wowtype_session_candidate_total(session) }, 0);
-        assert_eq!(unsafe { &*wowtype_session_choose(session, 0) }.handled, 0);
+        assert_eq!(unsafe { mytype_session_candidate_total(session) }, 0);
+        assert_eq!(unsafe { &*mytype_session_choose(session, 0) }.handled, 0);
 
         let frame = press(session, keysym::BACKSPACE);
         assert_eq!(frame.handled, 1);
         assert!(frame.commit.is_null());
         assert_eq!(c(frame.preedit), "nihaom");
-        assert_eq!(frame.size as usize, size_of::<WowtypeFrame>());
+        assert_eq!(frame.size as usize, size_of::<MyTypeFrame>());
 
-        let frame = unsafe { &*wowtype_session_reset(session, 1) };
+        let frame = unsafe { &*mytype_session_reset(session, 1) };
         assert_eq!(c(frame.commit), "nihaom");
         assert_eq!(c(frame.preedit), "");
-        unsafe { wowtype_session_free(session) };
+        unsafe { mytype_session_free(session) };
     }
 
     #[test]
     fn short_key_struct_is_zero_extended() {
-        // 旧外壳的 WowtypeKey 只到 keysym：后面的字段当 0（没有修饰键、按下）
-        let session = unsafe { wowtype_session_new(ptr::null_mut(), ptr::null()) };
-        let key = WowtypeKey {
+        // 旧外壳的 MyTypeKey 只到 keysym：后面的字段当 0（没有修饰键、按下）
+        let session = unsafe { mytype_session_new(ptr::null_mut(), ptr::null()) };
+        let key = MyTypeKey {
             size: 8,
             keysym: u32::from(b'a'),
             modifiers: 0xffff,
@@ -1142,17 +1142,17 @@ mod tests {
             repeat: 0,
             time_ms: 0,
         };
-        let frame = unsafe { &*wowtype_session_key(session, &key) };
+        let frame = unsafe { &*mytype_session_key(session, &key) };
         assert_eq!(frame.handled, 1);
         assert_eq!(c(frame.preedit), "a");
-        unsafe { wowtype_session_free(session) };
+        unsafe { mytype_session_free(session) };
     }
 
     #[test]
     fn short_config_struct_keeps_defaults() {
-        // 旧外壳的 WowtypeSessionConfig 没有 toolbar 这一项：读出来照默认开着，不是 0
-        let mut config = WowtypeSessionConfig::default();
-        config.size = std::mem::offset_of!(WowtypeSessionConfig, toolbar) as u32;
+        // 旧外壳的 MyTypeSessionConfig 没有 toolbar 这一项：读出来照默认开着，不是 0
+        let mut config = MyTypeSessionConfig::default();
+        config.size = std::mem::offset_of!(MyTypeSessionConfig, toolbar) as u32;
         config.toolbar = 0;
         config.shuangpin_keys = 1;
         let read = unsafe { read_sized(&config, config.size) }.to_config();
@@ -1164,19 +1164,19 @@ mod tests {
 
     #[test]
     fn null_handles() {
-        assert!(unsafe { wowtype_session_key(ptr::null_mut(), ptr::null()) }.is_null());
-        assert!(unsafe { wowtype_session_reset(ptr::null_mut(), 0) }.is_null());
+        assert!(unsafe { mytype_session_key(ptr::null_mut(), ptr::null()) }.is_null());
+        assert!(unsafe { mytype_session_reset(ptr::null_mut(), 0) }.is_null());
         assert_eq!(
-            unsafe { wowtype_session_candidate_total(ptr::null_mut()) },
+            unsafe { mytype_session_candidate_total(ptr::null_mut()) },
             0
         );
-        assert!(unsafe { wowtype_session_choose(ptr::null_mut(), 0) }.is_null());
-        assert!(unsafe { wowtype_session_select(ptr::null_mut(), 0) }.is_null());
-        assert!(unsafe { wowtype_session_candidate(ptr::null_mut(), 0) }.is_null());
+        assert!(unsafe { mytype_session_choose(ptr::null_mut(), 0) }.is_null());
+        assert!(unsafe { mytype_session_select(ptr::null_mut(), 0) }.is_null());
+        assert!(unsafe { mytype_session_candidate(ptr::null_mut(), 0) }.is_null());
         assert_eq!(
-            unsafe { wowtype_session_view(ptr::null_mut(), ptr::null_mut()) },
+            unsafe { mytype_session_view(ptr::null_mut(), ptr::null_mut()) },
             -1
         );
-        unsafe { wowtype_session_free(ptr::null_mut()) };
+        unsafe { mytype_session_free(ptr::null_mut()) };
     }
 }

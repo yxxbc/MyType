@@ -1,9 +1,9 @@
 //! 命令行 demo：读入拼音串，打印候选。
 //!
 //! 用法：
-//!   cargo run --bin wowtype-demo -- xian
-//!   cargo run --bin wowtype-demo -- --lexicon data/demo_lexicon.tsv nihao
-//!   echo "zg" | cargo run --bin wowtype-demo
+//!   cargo run --bin mytype-demo -- xian
+//!   cargo run --bin mytype-demo -- --lexicon data/demo_lexicon.tsv nihao
+//!   echo "zg" | cargo run --bin mytype-demo
 //!
 //! 不传拼音参数时从 stdin 逐行读取。
 
@@ -12,8 +12,8 @@ use std::io::{self, BufRead};
 use std::process;
 use std::sync::Arc;
 
-use wowtype_core::lm::{ArpaLm, BigramLm, LanguageModel};
-use wowtype_core::{open_cached, Engine, Lexicon};
+use mytype_core::lm::{ArpaLm, BigramLm, LanguageModel};
+use mytype_core::{open_cached, Engine, Lexicon};
 
 fn usage(program: &str) {
     println!("用法: {program} [选项] [拼音...]");
@@ -46,14 +46,14 @@ fn default_lexicon_path() -> String {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let program = args.first().map(String::as_str).unwrap_or("wowtype-demo");
+    let program = args.first().map(String::as_str).unwrap_or("mytype-demo");
     let mut lexicon_path = default_lexicon_path();
     let mut lm_path: Option<String> = None;
     let mut arpa_path: Option<String> = None;
     let mut beam: Option<usize> = None;
     let mut fuzzy = false;
     let mut shuangpin = false;
-    let mut scheme = wowtype_core::shuangpin::Scheme::default();
+    let mut scheme = mytype_core::shuangpin::Scheme::default();
     let mut traditional = false;
     let mut s2t_path: Option<String> = None;
     let mut english_path: Option<String> = None;
@@ -97,7 +97,7 @@ fn main() {
             "--shuangpin" => shuangpin = true,
             "--scheme" => {
                 i += 1;
-                match args.get(i).and_then(|v| wowtype_core::shuangpin::Scheme::from_name(v)) {
+                match args.get(i).and_then(|v| mytype_core::shuangpin::Scheme::from_name(v)) {
                     Some(value) => {
                         scheme = value;
                         shuangpin = true;
@@ -148,7 +148,7 @@ fn main() {
         }
     } else {
         match &lm_path {
-            Some(path) => match wowtype_core::lm::load_lm(path) {
+            Some(path) => match mytype_core::lm::load_lm(path) {
                 Ok(lm) => lm,
                 Err(error) => fail(&format!("{error:#}")),
             },

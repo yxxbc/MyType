@@ -1,13 +1,12 @@
-// 自定义词（常用语）：~/Library/Application Support/MyType/custom.tsv，格式同 Linux 的
-// ~/.local/share/wowtype/custom.tsv：一行一个「编码<TAB>词[<TAB>频次]」，# 开头是注释。
+// 自定义词（常用语）：~/Library/Application Support/MyType/custom.tsv，格式同 旧版的
+// ~/Library/Application Support/MyType/custom.tsv：一行一个「编码<TAB>词[<TAB>频次]」，# 开头是注释。
 //
-// 设置窗口的「自定义词」页用：加词、删词、导入、导出，规则照 Linux 设置界面（settings/wowtype-config 的
-// read_custom_words / parse_custom_words / merge_custom_words / normalize_code）。比 Linux 多一点：
+// 设置窗口的「自定义词」页用：加词、删词、导入、导出，规则：编码可以带空格、导入时同词用文件里的编码、导出带说明。
 // 没动过的行（注释、频次列）原样写回去。
 //
-// 不依赖 Foundation：按键测试在 Linux 上也编。编码整理（拼音切音节）、猜拼音用核心的。
+// 不依赖 Foundation：按键测试不依赖 AppKit 也能编。编码整理（拼音切音节）、猜拼音用核心的。
 
-import CWowtype
+import CMyType
 
 public struct CustomWords: Equatable {
     public struct Entry: Equatable {
@@ -29,7 +28,7 @@ public struct CustomWords: Equatable {
 
     private var lines: [Line]
 
-    /// 新文件开头的说明（和 Linux 设置界面写的一样）
+    /// 新文件开头的说明（和导出的文件一样）
     public static let header = """
     # MyType 自定义词：编码<TAB>词。编码是拼音（空格分开音节），也可以是 mail 这类字母；
     # 词里写 \\n 表示换行。由 MyType 设置维护，也可以手动编辑。
@@ -123,9 +122,9 @@ public struct CustomWords: Equatable {
         }
     }
 
-    /// 界面上显示的词：文件里的 \\n（换行）画成 ⏎（列表、提示都这样，和 Linux 设置一样）。
+    /// 界面上显示的词：文件里的 \\n（换行）画成 ⏎（列表、提示都这样）。
     public static func shown(_ word: String) -> String {
-        // 不用 Foundation（Linux 上的按键测试也编这个文件）
+        // 不用 Foundation（以前的按键测试也编这个文件）
         var out = ""
         var backslash = false
         for c in word {
@@ -172,14 +171,14 @@ public struct CustomWords: Equatable {
 
 extension CustomWords {
     /// 自定义词的编码：拼音整理成空格分开的音节；不是拼音但全是字母的（mail）原样小写。都不是返回 nil。
-    /// 规则和音节表在核心里（wowtype_custom_code），Linux 的加载也照那份。
+    /// 规则和音节表在核心里（mytype_custom_code），旧版的加载也照那份。
     public static func normalizeCode(_ text: String) -> String? {
-        wowtype_custom_code(text, 0).map { String(cString: $0) }
+        mytype_custom_code(text, 0).map { String(cString: $0) }
     }
 
     /// 把打的拼音整理成空格分开的音节：Ni Hǎo、nihao、ni'hao、ni3hao3 → ni hao。不合法返回 nil。
     public static func normalizePinyin(_ text: String) -> String? {
-        wowtype_custom_code(text, 1).map { String(cString: $0) }
+        mytype_custom_code(text, 1).map { String(cString: $0) }
     }
 }
 
@@ -187,11 +186,11 @@ extension CustomWords {
 
 extension CustomWords {
     /// 在词库原文（拼音<TAB>词<TAB>频次）里找词的拼音：整个词有就取频次最高的那条，没有就一个字一个字找。
-    /// 猜不出（有词库里没有的字、英文）返回 nil。核心做（wowtype_guess_pinyin），和 Linux 设置界面的
+    /// 猜不出（有词库里没有的字、英文）返回 nil。核心做（mytype_guess_pinyin），和设置窗口的
     /// PinyinGuesser 规则一样。
     public static func guessPinyin(_ word: String, lexicon: UnsafeRawBufferPointer) -> String? {
         guard !word.isEmpty, let base = lexicon.baseAddress, lexicon.count > 0 else { return nil }
-        return wowtype_guess_pinyin(base.assumingMemoryBound(to: CChar.self), lexicon.count, word)
+        return mytype_guess_pinyin(base.assumingMemoryBound(to: CChar.self), lexicon.count, word)
             .map { String(cString: $0) }
     }
 }

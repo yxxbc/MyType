@@ -1,4 +1,4 @@
-//! 词级二元语言模型（紧凑二进制格式，`wowtype-lmbuild` 从语料训练）。
+//! 词级二元语言模型（紧凑二进制格式，`mytype-lmbuild` 从语料训练）。
 //!
 //! 和 [`crate::lm::BigramLm`] 不同，这里的分数是**相对一元的提升**：
 //! `ln P(cur | prev) - ln P(cur)`。词本身有多常用已经由词库词频管了（束搜索里的 lexical），
@@ -67,7 +67,7 @@ impl WordLm {
     fn parse(data: Snapshot) -> Result<Self> {
         let bytes = data.as_slice();
         if bytes.len() < 16 || &bytes[0..4] != MAGIC {
-            bail!("不是 WowType 词级语言模型");
+            bail!("不是 MyType 词级语言模型");
         }
         let version = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
         if version != VERSION {

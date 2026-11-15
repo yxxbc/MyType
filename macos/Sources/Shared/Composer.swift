@@ -1,4 +1,4 @@
-// 组字：按键交给核心的输入会话（wowtype_session_*），按会话给的结果更新编辑区、候选框、上屏。
+// 组字：按键交给核心的输入会话（mytype_session_*），按会话给的结果更新编辑区、候选框、上屏。
 //
 // 不依赖 AppKit。输入法外壳实现 TextClient（IMK 的 client），按键测试用一个假的 TextClient。
 //
@@ -9,12 +9,12 @@
 // 打字途中按 Control+Delete（Mac 键盘上的 Delete 是退格；有向前删除键或按 Fn+Control+Delete 也行）
 // 忘掉光标处学错的词（ABI 1.7），也是会话管，外壳只在 frame->forgot 时马上存学习数据（onForget）。
 //
-// 互译（「译」，和 Linux 的 fcitx5 外壳一样）：上屏的字不交给应用，攒成原文（translateSource）显示在
+// 互译（「译」，和 旧版的 外壳一样）：上屏的字不交给应用，攒成原文（translateSource）显示在
 // 候选框顶上；原文停下来 0.5 秒（句末标点立刻）发去翻译，译文边出边写在应用的编辑区里（带下划线）。
 // 回车 / 空格上屏译文，Shift+回车上屏原文，Esc 清空。翻译器不阻塞：外壳收到 onTranslatePoll 以后
 // 每 50 毫秒调一次 pollTranslation，直到它返回 false。
 
-import CWowtype
+import CMyType
 #if canImport(Glibc)
 import Glibc
 #else
@@ -29,53 +29,53 @@ public final class Engine {
     public static let maxCandidates: UInt32 = 1000
 
     public init?(lexicon: String, languageModel: String? = nil) {
-        guard let handle = wowtype_engine_new(lexicon, languageModel) else {
+        guard let handle = mytype_engine_new(lexicon, languageModel) else {
             return nil
         }
         self.handle = handle
-        wowtype_engine_set_max_candidates(handle, Engine.maxCandidates)
+        mytype_engine_set_max_candidates(handle, Engine.maxCandidates)
     }
 
     deinit {
-        wowtype_engine_free(handle)
+        mytype_engine_free(handle)
     }
 
     /// 英文词表；返回载入的词数，失败 -1。
     @discardableResult
     public func loadEnglish(_ path: String) -> Int {
-        Int(wowtype_engine_load_english(handle, path))
+        Int(mytype_engine_load_english(handle, path))
     }
 
     /// 混上领域词级模型（用户自己训的 words.domain.lm），nil 去掉；再调一次是换掉上一个。
     @discardableResult
     public func setDomainLM(_ path: String?) -> Bool {
-        wowtype_engine_set_domain_lm(handle, path) == 0
+        mytype_engine_set_domain_lm(handle, path) == 0
     }
 
     @discardableResult
     public func loadUserDict(_ path: String) -> Int {
-        Int(wowtype_engine_load_user_dict(handle, path))
+        Int(mytype_engine_load_user_dict(handle, path))
     }
 
     @discardableResult
     public func saveUserDict(_ path: String) -> Bool {
-        wowtype_engine_save_user_dict(handle, path) == 0
+        mytype_engine_save_user_dict(handle, path) == 0
     }
 
     @discardableResult
     public func loadHistory(_ path: String) -> Int {
-        Int(wowtype_engine_load_history(handle, path))
+        Int(mytype_engine_load_history(handle, path))
     }
 
     @discardableResult
     public func saveHistory(_ path: String) -> Bool {
-        wowtype_engine_save_history(handle, path) == 0
+        mytype_engine_save_history(handle, path) == 0
     }
 
     /// 自定义词（custom.tsv）：替换上一次载入的，文件不存在就清空。返回条数，-1 出错。
     @discardableResult
     public func loadCustomWords(_ path: String) -> Int {
-        Int(wowtype_engine_load_custom_words(handle, path))
+        Int(mytype_engine_load_custom_words(handle, path))
     }
 
     /// 简繁对照表载入过没有（繁体输出要用，第一次打开繁体时才读）。
@@ -83,31 +83,31 @@ public final class Engine {
     /// 五笔码表载入过没有（选了五笔才读）。
     public private(set) var wubiLoaded = false
 
-    /// 设置里管引擎的部分（模糊音、纠错、双拼、生僻字、繁体、五笔码表），和 Linux 的 applyCoreSettings 一样。
+    /// 设置里管引擎的部分（模糊音、纠错、双拼、生僻字、繁体、五笔码表），和 旧版的 applyCoreSettings 一样。
     /// conversion 是简繁对照表 s2t.tsv 的路径，没有就不出繁体；wubi 是五笔码表 wubi86.tsv 的路径，
     /// 没有时五笔照全拼打（候选框上方会话会说）。返回要记日志的问题。
     @discardableResult
-    public func apply(_ config: WowtypeConfig, conversion: String? = nil, wubi: String? = nil) -> [String] {
+    public func apply(_ config: MyTypeConfig, conversion: String? = nil, wubi: String? = nil) -> [String] {
         var problems: [String] = []
-        wowtype_engine_set_fuzzy(handle, config.fuzzy ? 1 : 0)
-        wowtype_engine_set_fuzzy_groups(handle, config.fuzzyGroups)
-        wowtype_engine_set_shuangpin(handle, config.shuangpin ? 1 : 0)
-        if wowtype_engine_set_shuangpin_scheme(handle, config.shuangpinScheme) != 0 {
+        mytype_engine_set_fuzzy(handle, config.fuzzy ? 1 : 0)
+        mytype_engine_set_fuzzy_groups(handle, config.fuzzyGroups)
+        mytype_engine_set_shuangpin(handle, config.shuangpin ? 1 : 0)
+        if mytype_engine_set_shuangpin_scheme(handle, config.shuangpinScheme) != 0 {
             problems.append("不认识双拼方案 \(config.shuangpinScheme)，用自然码")
-            wowtype_engine_set_shuangpin_scheme(handle, "ziranma")
+            mytype_engine_set_shuangpin_scheme(handle, "ziranma")
         }
-        wowtype_engine_set_typo_correction(handle, config.typoCorrection ? 1 : 0)
-        wowtype_engine_set_rare_ext_chars(handle, config.rareExtChars ? 1 : 0)
+        mytype_engine_set_typo_correction(handle, config.typoCorrection ? 1 : 0)
+        mytype_engine_set_rare_ext_chars(handle, config.rareExtChars ? 1 : 0)
         if config.traditional && !conversionLoaded {
-            if let conversion, wowtype_engine_load_conversion(handle, conversion) > 0 {
+            if let conversion, mytype_engine_load_conversion(handle, conversion) > 0 {
                 conversionLoaded = true
             } else {
                 problems.append("简繁表载入失败 \(conversion ?? "（没有 s2t.tsv）")")
             }
         }
-        wowtype_engine_set_traditional(handle, config.traditional && conversionLoaded ? 1 : 0)
+        mytype_engine_set_traditional(handle, config.traditional && conversionLoaded ? 1 : 0)
         if config.wubi && !wubiLoaded {
-            if let wubi, wowtype_engine_load_wubi(handle, wubi) > 0 {
+            if let wubi, mytype_engine_load_wubi(handle, wubi) > 0 {
                 wubiLoaded = true
             } else {
                 problems.append("五笔码表载入失败 \(wubi ?? "（没有 wubi86.tsv）")，先按全拼打")
@@ -117,7 +117,7 @@ public final class Engine {
     }
 
     public static var abiVersion: Int {
-        Int(wowtype_abi_version())
+        Int(mytype_abi_version())
     }
 }
 
@@ -146,7 +146,7 @@ public struct CandidatePage: Equatable {
     }
 }
 
-/// 互译时的候选框（Linux 上是 fcitx5 面板的 auxUp + 原文框、auxDown）。
+/// 互译时的候选框（以前是 面板的 auxUp + 原文框、auxDown）。
 public struct TranslatePanel: Equatable {
     /// 「中→英 互译：」
     public var title: String
@@ -169,7 +169,7 @@ public protocol TextClient: AnyObject {
     /// 能把打的字发去翻译。密码框之类（macOS 上是系统开着安全输入时）照常打中文，不往外发。
     var allowsTranslation: Bool { get }
     /// previousCharacter 是应用告诉的（不是外壳猜的）。中英文之间自动加空格只信应用告诉的，
-    /// 和 Linux 一样：读不到光标前的文字就不猜。
+    /// 和以前一样：读不到光标前的文字就不猜。
     var previousCharacterIsReliable: Bool { get }
 }
 
@@ -191,14 +191,14 @@ public final class Composer {
 
     /// 输入模式由会话管（单按 Shift 的判断也在会话里）。
     public var mode: Mode {
-        switch wowtype_session_mode(session) {
-        case WOWTYPE_MODE_ENGLISH: return .english
-        case WOWTYPE_MODE_TRANSLATE: return .translate
+        switch mytype_session_mode(session) {
+        case MYTYPE_MODE_ENGLISH: return .english
+        case MYTYPE_MODE_TRANSLATE: return .translate
         default: return .chinese
         }
     }
-    /// 设置（wowtype.conf）里管会话和外壳的部分；管引擎的部分用 Engine.apply。
-    public private(set) var config = WowtypeConfig()
+    /// 设置（mytype.conf）里管会话和外壳的部分；管引擎的部分用 Engine.apply。
+    public private(set) var config = MyTypeConfig()
     /// 一页几个候选
     public var pageSize: Int {
         get { config.pageSize }
@@ -235,7 +235,7 @@ public final class Composer {
     private var translateBridge: TranslateBridge?
     /// 攒着的原文（还没上屏）
     public var translateSource: String {
-        String(cString: wowtype_session_translate_source(session))
+        String(cString: mytype_session_translate_source(session))
     }
     /// 现在画的是哪个结果（signature），结果变了才重画
     private var translateDrawn = ""
@@ -247,12 +247,12 @@ public final class Composer {
     public init(engine: Engine?, client: TextClient) {
         self.engine = engine
         self.client = client
-        session = wowtype_session_new(engine?.handle, nil)
+        session = mytype_session_new(engine?.handle, nil)
         configure()
     }
 
     deinit {
-        wowtype_session_free(session)
+        mytype_session_free(session)
     }
 
     public var hasEngine: Bool { engine != nil }
@@ -263,17 +263,17 @@ public final class Composer {
     public func setEngine(_ engine: Engine?) {
         guard engine !== self.engine else { return }
         if self.engine != nil && isComposing {
-            // 换词库：编辑区、候选都是旧词库算的，清掉（和 Linux 一样）
-            wowtype_session_reset(session, 0)
+            // 换词库：编辑区、候选都是旧词库算的，清掉（和以前一样）
+            mytype_session_reset(session, 0)
         }
         // 先让会话换上新的，再放掉旧的（旧引擎可能就此释放）
-        wowtype_session_set_engine(session, engine?.handle)
+        mytype_session_set_engine(session, engine?.handle)
         self.engine = engine
         refresh()
     }
 
-    /// 换设置。Shift 切换关掉、也没另设切换键时回到中文（切不回来了；进出「译」的键只进出「译」，不算）；剪贴板历史关掉时马上清空；关掉了互译或者翻译器没配好时离开「译」（和 Linux 一样）。
-    public func apply(_ config: WowtypeConfig) {
+    /// 换设置。Shift 切换关掉、也没另设切换键时回到中文（切不回来了；进出「译」的键只进出「译」，不算）；剪贴板历史关掉时马上清空；关掉了互译或者翻译器没配好时离开「译」（和以前一样）。
+    public func apply(_ config: MyTypeConfig) {
         self.config = config
         let noWayBack = config.shiftToggle == .off && config.toggleKey == nil
         if noWayBack || (mode == .translate && !translateAvailable) {
@@ -296,14 +296,14 @@ public final class Composer {
         self.translator = translator
         let bridge = translator.map(TranslateBridge.init)
         if var table = bridge?.table {
-            wowtype_session_set_translate_backend(session, &table)
+            mytype_session_set_translate_backend(session, &table)
         } else {
-            wowtype_session_set_translate_backend(session, nil)
+            mytype_session_set_translate_backend(session, nil)
         }
         translateBridge = bridge
         configure()
         if mode == .translate && !translateAvailable {
-            apply(wowtype_session_set_mode(session, WOWTYPE_MODE_CHINESE))
+            apply(mytype_session_set_mode(session, MYTYPE_MODE_CHINESE))
         }
         refresh()
     }
@@ -323,22 +323,22 @@ public final class Composer {
     }
 
     public var isComposing: Bool {
-        guard let input = wowtype_session_input(session) else { return false }
+        guard let input = mytype_session_input(session) else { return false }
         return input.pointee != 0
     }
 
     public var input: String {
-        wowtype_session_input(session).map { String(cString: $0) } ?? ""
+        mytype_session_input(session).map { String(cString: $0) } ?? ""
     }
 
     /// 已选的词连起来（选了句首的词、剩下的还在打）。
     var selectedText: String {
-        wowtype_session_selected_text(session).map { String(cString: $0) } ?? ""
+        mytype_session_selected_text(session).map { String(cString: $0) } ?? ""
     }
 
     /// 还没选词的那部分输入。
     var remaining: String {
-        wowtype_session_remaining(session).map { String(cString: $0) } ?? ""
+        mytype_session_remaining(session).map { String(cString: $0) } ?? ""
     }
 
     /// 输入法手里还有没上屏的字：正在打的拼音，或者互译攒着的原文。
@@ -355,7 +355,7 @@ public final class Composer {
         }
         // 先报给会话：按住 Shift 时按了别的键，这一下就不算单按（下面有的键不交给会话）
         observe(key)
-        // 表情面板快捷键中英文都管；工具栏、表情面板开着时按键都归它们（和 Linux 一样）
+        // 表情面板快捷键中英文都管；工具栏、表情面板开着时按键都归它们（和以前一样）
         if let emojiKey = config.emojiKey, emojiKey.matches(key) {
             toggleEmojiPanel()
             return true
@@ -397,18 +397,18 @@ public final class Composer {
 
     /// Shift 的按下 / 松开（macOS 的 flagsChanged）。单按切中英文时返回 true。
     /// right 是右 Shift（设置里 ShiftToggle 可以只用一边，或者不用 Shift 切换）。
-    /// 判断在会话里（和 Linux 同一套规矩）：中间按了别的键、按住超过 0.5 秒、按下时带着别的修饰键、
+    /// 判断在会话里：中间按了别的键、按住超过 0.5 秒、按下时带着别的修饰键、
     /// 工具栏或表情面板开着都不算。
     @discardableResult
     public func shiftChanged(down: Bool, otherModifiers: Bool, now: Double, right: Bool = false) -> Bool {
         configure() // 翻译器可能刚配好（本地模型下载完）：「译」这一档跟着
-        var raw = WowtypeKey()
-        raw.size = UInt32(MemoryLayout<WowtypeKey>.size)
+        var raw = MyTypeKey()
+        raw.size = UInt32(MemoryLayout<MyTypeKey>.size)
         raw.keysym = right ? 0xffe2 : 0xffe1
         raw.release = down ? 0 : 1
         raw.modifiers = otherModifiers ? Modifiers.control.rawValue : 0
         raw.time_ms = UInt64(max(now, 0) * 1000)
-        guard let frame = wowtype_session_key(session, &raw), frame.pointee.mode_changed != 0 else {
+        guard let frame = mytype_session_key(session, &raw), frame.pointee.mode_changed != 0 else {
             return false
         }
         // 打到一半切英文：会话把已选的词 + 打的字母放进了 frame；离开「译」时是攒着的原文
@@ -418,29 +418,29 @@ public final class Composer {
 
     /// 别的修饰键变了（Command、Option 等）：这次 Shift 不算单按。
     public func otherModifierChanged() {
-        var raw = WowtypeKey()
-        raw.size = UInt32(MemoryLayout<WowtypeKey>.size)
-        raw.action = UInt32(WOWTYPE_KEY_ACTION_OBSERVE)
-        wowtype_session_key(session, &raw)
+        var raw = MyTypeKey()
+        raw.size = UInt32(MemoryLayout<MyTypeKey>.size)
+        raw.action = UInt32(MYTYPE_KEY_ACTION_OBSERVE)
+        mytype_session_key(session, &raw)
     }
 
     /// 告诉会话有这个键（只用来打断单按 Shift，不处理）。
     private func observe(_ key: KeyInput) {
-        var raw = WowtypeKey()
-        raw.size = UInt32(MemoryLayout<WowtypeKey>.size)
+        var raw = MyTypeKey()
+        raw.size = UInt32(MemoryLayout<MyTypeKey>.size)
         raw.keysym = key.keysym
         raw.modifiers = key.modifiers.rawValue
-        raw.action = UInt32(WOWTYPE_KEY_ACTION_OBSERVE)
-        wowtype_session_key(session, &raw)
+        raw.action = UInt32(MYTYPE_KEY_ACTION_OBSERVE)
+        mytype_session_key(session, &raw)
     }
 
-    /// 设置里另设的切换键、进出「译」的键（和 Linux 一样：两个一样时算进出「译」）。
+    /// 设置里另设的切换键、进出「译」的键（和以前一样：两个一样时算进出「译」）。
     private func modeKeyAction(_ key: KeyInput) -> UInt32? {
         if config.translateModeKey?.matches(key) == true {
-            return UInt32(WOWTYPE_KEY_ACTION_TOGGLE_TRANSLATE)
+            return UInt32(MYTYPE_KEY_ACTION_TOGGLE_TRANSLATE)
         }
         if config.toggleKey?.matches(key) == true {
-            return UInt32(WOWTYPE_KEY_ACTION_TOGGLE_MODE)
+            return UInt32(MYTYPE_KEY_ACTION_TOGGLE_MODE)
         }
         return nil
     }
@@ -452,37 +452,37 @@ public final class Composer {
         guard target != mode else { return }
         let raw: Int32
         switch target {
-        case .chinese: raw = WOWTYPE_MODE_CHINESE
-        case .english: raw = WOWTYPE_MODE_ENGLISH
-        case .translate: raw = WOWTYPE_MODE_TRANSLATE
+        case .chinese: raw = MYTYPE_MODE_CHINESE
+        case .english: raw = MYTYPE_MODE_ENGLISH
+        case .translate: raw = MYTYPE_MODE_TRANSLATE
         }
-        apply(wowtype_session_set_mode(session, raw))
+        apply(mytype_session_set_mode(session, raw))
     }
 
     /// 系统要结束组字（换输入框、点了别处、切走输入法）：已选的词 + 打的字母原样上屏（和回车一样，
     /// 双拼是打的键、五笔是码，不带分音节的隔音符）；互译时拼音先进原文，原文再原样上屏。
     /// 工具栏、表情面板收起来，会话记的上文作废（回来时光标可能在别处）。
-    /// Linux 上同样的时候是丢掉：那边工具包抢先上屏的是编辑区里显示的字，输入法没法换成原始字母。
+    /// 以前同样的时候是丢掉：那边工具包抢先上屏的是编辑区里显示的字，输入法没法换成原始字母。
     public func commitComposition() {
         closeTool()
         if hasPendingText {
-            apply(wowtype_session_reset(session, 1))
+            apply(mytype_session_reset(session, 1))
         }
-        apply(wowtype_session_reset(session, 0))
+        apply(mytype_session_reset(session, 0))
     }
 
     /// 放弃正在打的：拼音、选了一半的句子、互译攒着的原文都丢掉，工具栏、表情面板收起来，上文作废。
     public func cancel() {
         closeTool()
         translateDrawn = ""
-        wowtype_session_translate_clear(session)
-        apply(wowtype_session_reset(session, 0))
+        mytype_session_translate_clear(session)
+        apply(mytype_session_reset(session, 0))
     }
 
     /// 点候选框里显示的第 index 个（和按数字键一样）。
     public func select(_ index: Int) {
         // 工具栏 / 表情面板开着时选的是面板这一页 / 这一屏里的第 index 项（会话认）
-        guard index >= 0, let frame = wowtype_session_select(session, index), frame.pointee.handled != 0 else {
+        guard index >= 0, let frame = mytype_session_select(session, index), frame.pointee.handled != 0 else {
             return
         }
         apply(frame)
@@ -491,9 +491,9 @@ public final class Composer {
     // MARK: 内部
 
     private func configure() {
-        var config = WowtypeSessionConfig()
+        var config = MyTypeSessionConfig()
         let settings = self.config
-        config.size = UInt32(MemoryLayout<WowtypeSessionConfig>.size)
+        config.size = UInt32(MemoryLayout<MyTypeSessionConfig>.size)
         config.page_size = UInt32(max(settings.pageSize, 1))
         config.calculator = settings.calculator ? 1 : 0
         config.date_time = settings.dateTime ? 1 : 0
@@ -506,10 +506,10 @@ public final class Composer {
         config.punct_style = settings.halfwidthPunct ? 1 : 0
         config.auto_space = UInt32(bitPattern: settings.autoSpaceFlags)
         switch settings.shiftToggle {
-        case .both: config.shift_toggle = WOWTYPE_SHIFT_TOGGLE_BOTH
-        case .left: config.shift_toggle = WOWTYPE_SHIFT_TOGGLE_LEFT
-        case .right: config.shift_toggle = WOWTYPE_SHIFT_TOGGLE_RIGHT
-        case .off: config.shift_toggle = WOWTYPE_SHIFT_TOGGLE_OFF
+        case .both: config.shift_toggle = MYTYPE_SHIFT_TOGGLE_BOTH
+        case .left: config.shift_toggle = MYTYPE_SHIFT_TOGGLE_LEFT
+        case .right: config.shift_toggle = MYTYPE_SHIFT_TOGGLE_RIGHT
+        case .off: config.shift_toggle = MYTYPE_SHIFT_TOGGLE_OFF
         }
         config.translate_mode = translateAvailable ? 1 : 0
         config.translate_key = settings.translateModeKey == nil ? 0 : 1
@@ -519,7 +519,7 @@ public final class Composer {
         config.wubi = settings.wubi ? 1 : 0
         config.wubi_auto_commit = settings.wubiAutoCommit ? 1 : 0
         config.wubi_hint = settings.wubiHint ? 1 : 0
-        wowtype_session_configure(session, &config)
+        mytype_session_configure(session, &config)
         if isComposing {
             refresh()
         }
@@ -564,9 +564,9 @@ public final class Composer {
     }
 
     @discardableResult
-    func sendToSession(_ key: KeyInput, action: UInt32 = UInt32(WOWTYPE_KEY_ACTION_NONE)) -> Bool {
-        var raw = WowtypeKey()
-        raw.size = UInt32(MemoryLayout<WowtypeKey>.size)
+    func sendToSession(_ key: KeyInput, action: UInt32 = UInt32(MYTYPE_KEY_ACTION_NONE)) -> Bool {
+        var raw = MyTypeKey()
+        raw.size = UInt32(MemoryLayout<MyTypeKey>.size)
         raw.keysym = key.keysym
         raw.modifiers = key.modifiers.rawValue
         raw.release = key.release ? 1 : 0
@@ -574,21 +574,21 @@ public final class Composer {
         raw.time_ms = UInt64(max(clock(), 0) * 1000)
         if client?.allowsTranslation != true {
             // 密码框（安全输入）：「译」里也照常上屏、不往外发，进出「译」的键进不去
-            raw.hints |= WOWTYPE_KEY_HINT_NO_TRANSLATE
+            raw.hints |= MYTYPE_KEY_HINT_NO_TRANSLATE
         }
         if translating {
             // 互译时上屏的字进原文：光标前的字是原文的最后一个字（3.14 的点、20:22 的冒号原样进原文），不补空格
             raw.prev_char = previousCharacter
-            raw.hints |= WOWTYPE_KEY_HINT_NO_AUTO_SPACE
+            raw.hints |= MYTYPE_KEY_HINT_NO_AUTO_SPACE
         } else {
             // 应用告诉的才给（自己猜的给 0）：会话按它决定要不要补空格、核对自己记的上文；
             // 数字后面的标点它自己也记
             raw.prev_char = reliablePreviousCharacter
             if raw.prev_char != 0 {
-                raw.hints |= WOWTYPE_KEY_HINT_SURROUNDING
+                raw.hints |= MYTYPE_KEY_HINT_SURROUNDING
             }
         }
-        guard let frame = wowtype_session_key(session, &raw) else {
+        guard let frame = mytype_session_key(session, &raw) else {
             return false
         }
         let handled = frame.pointee.handled != 0
@@ -604,7 +604,7 @@ public final class Composer {
     }
 
     /// 按会话给的 frame 上屏、更新编辑区和候选框。
-    func apply(_ frame: UnsafePointer<WowtypeFrame>?) {
+    func apply(_ frame: UnsafePointer<MyTypeFrame>?) {
         if let frame, let commit = frame.pointee.commit {
             // 会话已经补好了空格、记了上文；互译时上屏的是译文、原文
             let text = String(cString: commit)
@@ -614,7 +614,7 @@ public final class Composer {
             }
             // 选了 emoji（打字推荐的、表情面板的）会话记进最近用过
         }
-        if let frame, Int(frame.pointee.size) >= MemoryLayout<WowtypeFrame>.size, frame.pointee.forgot != 0 {
+        if let frame, Int(frame.pointee.size) >= MemoryLayout<MyTypeFrame>.size, frame.pointee.forgot != 0 {
             onForget?()
         }
         refresh()
@@ -624,7 +624,7 @@ public final class Composer {
     /// 补空格、记上文，互译时进原文。
     func insert(_ text: String) {
         guard !text.isEmpty else { return }
-        apply(wowtype_session_commit_text(session, text, reliablePreviousCharacter))
+        apply(mytype_session_commit_text(session, text, reliablePreviousCharacter))
     }
 
     func refresh() {
@@ -632,12 +632,12 @@ public final class Composer {
             drawTool()
             return
         }
-        if translating, let all = wowtype_session_frame(session), all.pointee.translating != 0,
+        if translating, let all = mytype_session_frame(session), all.pointee.translating != 0,
            isComposing || !translateSource.isEmpty {
             refreshTranslate(all)
             return
         }
-        let frame = isComposing ? wowtype_session_frame(session) : nil
+        let frame = isComposing ? mytype_session_frame(session) : nil
         guard let frame else {
             client?.setMarkedText("", cursor: 0)
             client?.showCandidates(nil)
@@ -650,16 +650,16 @@ public final class Composer {
     }
 
     /// 会话这一页 / 展开面板这一屏的候选；没有候选是 nil。
-    private func candidatePage(_ frame: UnsafePointer<WowtypeFrame>) -> CandidatePage? {
+    private func candidatePage(_ frame: UnsafePointer<MyTypeFrame>) -> CandidatePage? {
         let f = frame.pointee
         // 只读显示的这些：候选可能有上千个
         var texts: [String] = []
         var comments: [String] = []
         texts.reserveCapacity(f.cand_count)
         for i in 0..<f.cand_count {
-            if let text = wowtype_session_candidate(session, i) {
+            if let text = mytype_session_candidate(session, i) {
                 texts.append(String(cString: text))
-                comments.append(wowtype_session_candidate_comment(session, i).map { String(cString: $0) } ?? "")
+                comments.append(mytype_session_candidate_comment(session, i).map { String(cString: $0) } ?? "")
             }
         }
         // 五笔空码、没有码表时没有候选，只有上方一行提示
@@ -677,7 +677,7 @@ public final class Composer {
     /// 结果变了就重画。返回 false 表示不用再调了（下一次原文变了会再叫 onTranslatePoll）。
     @discardableResult
     public func pollTranslation() -> Bool {
-        guard let frame = wowtype_session_tick(session, UInt64(max(clock(), 0) * 1000)) else {
+        guard let frame = mytype_session_tick(session, UInt64(max(clock(), 0) * 1000)) else {
             return false
         }
         if frame.pointee.commit != nil {
@@ -691,15 +691,15 @@ public final class Composer {
         return frame.pointee.wake_after_ms > 0
     }
 
-    private func translateSignature(_ frame: UnsafePointer<WowtypeFrame>) -> String {
+    private func translateSignature(_ frame: UnsafePointer<MyTypeFrame>) -> String {
         let f = frame.pointee
         return [f.translate_source, f.translate_text, f.translate_status, f.translate_title]
             .map { String(cString: $0) }.joined(separator: "|") + "|\(f.translate_done)"
     }
 
-    /// 互译时画编辑区和候选框（Linux 的 fillTranslateView）：编辑区里是译文，
+    /// 互译时画编辑区和候选框（旧版的 fillTranslateView）：编辑区里是译文，
     /// 候选框顶上是「中→英 互译：」+ 原文 + 正在打的拼音，底下是状态。内容都是会话给的。
-    private func refreshTranslate(_ frame: UnsafePointer<WowtypeFrame>) {
+    private func refreshTranslate(_ frame: UnsafePointer<MyTypeFrame>) {
         let f = frame.pointee
         translateDrawn = translateSignature(frame)
         if f.wake_after_ms > 0 {
@@ -721,10 +721,10 @@ public final class Composer {
     /// 候选（全部，不分页），测试用。
     public func allCandidates() -> [String] {
         var out: [String] = []
-        for i in 0..<Int(wowtype_session_candidate_total(session)) {
-            var info = WowtypeCandidateInfo()
-            info.size = UInt32(MemoryLayout<WowtypeCandidateInfo>.size)
-            if wowtype_session_candidate_info(session, i, &info) == 0, let text = info.text {
+        for i in 0..<Int(mytype_session_candidate_total(session)) {
+            var info = MyTypeCandidateInfo()
+            info.size = UInt32(MemoryLayout<MyTypeCandidateInfo>.size)
+            if mytype_session_candidate_info(session, i, &info) == 0, let text = info.text {
                 out.append(String(cString: text))
             }
         }

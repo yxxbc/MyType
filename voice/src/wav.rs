@@ -68,7 +68,7 @@ mod tests {
 
     #[test]
     fn roundtrip() {
-        let path = std::env::temp_dir().join("wowtype_wav_roundtrip.wav");
+        let path = std::env::temp_dir().join("mytype_wav_roundtrip.wav");
         let samples: Vec<i16> = (0..1000).map(|i| (i % 100) as i16 - 50).collect();
         write_wav(&path, &samples).unwrap();
         let (rate, channels, back) = read_wav(&path).unwrap();
@@ -80,7 +80,7 @@ mod tests {
 
     #[test]
     fn rejects_non_wav() {
-        let path = std::env::temp_dir().join("wowtype_not_wav.bin");
+        let path = std::env::temp_dir().join("mytype_not_wav.bin");
         std::fs::write(&path, b"not a wav file at all").unwrap();
         assert!(read_wav(&path).is_err());
         let _ = std::fs::remove_file(&path);

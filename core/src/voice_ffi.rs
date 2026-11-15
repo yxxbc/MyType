@@ -1,17 +1,17 @@
-//! 语音输入的 C 接口：按住（或点一下）热键说话，松开后把识别结果交给插件上屏。
+//! 语音输入的 C 接口：按住（或点一下）热键说话，松开后把识别结果交给外壳上屏。
 //!
-//! 识别用微信输入法的离线模型（`wowtype_voice::wtlocal`）。模型不随软件分发，
-//! 用户在设置界面（WowType 设置 → 语音）里下载；这里只读，不下载。
+//! 识别用微信输入法的离线模型（`mytype_voice::wtlocal`）。模型不随软件分发，
+//! 用户在设置界面（MyType 设置 → 语音）里下载；这里只读，不下载。
 //! 没有模型时按热键只给一句提示（VOICE_ERROR + MODEL_MISSING），什么也不做。
 //!
 //! 线程：
-//! - 插件线程只调 `wowtype_voice_*`，这些函数都不阻塞（不开设备、不解码）；
+//! - 外壳线程只调 `mytype_voice_*`，这些函数都不阻塞（不开设备、不解码）；
 //! - 每次说话起一个工作线程：开麦克风、分帧、VAD、喂识别、出中间结果，结束时整段定稿；
 //! - 模型的加载在单独的线程里，只做一次。说话时模型还没读完，音频先攒着，好了再补喂。
 //!
-//! 插件定时调 `wowtype_voice_poll`（几十毫秒一次）取状态与文本。
+//! 外壳定时调 `mytype_voice_poll`（几十毫秒一次）取状态与文本。
 //!
-//! 测试：设了环境变量 `WOWTYPE_VOICE_WAV` 时不开麦克风，改读这个 WAV 文件当作说的话。
+//! 测试：设了环境变量 `MYTYPE_VOICE_WAV` 时不开麦克风，改读这个 WAV 文件当作说的话。
 
 #![allow(clippy::missing_safety_doc)]
 
@@ -22,11 +22,11 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-use wowtype_voice::asr::AsrChannel;
-use wowtype_voice::audio::{downmix, to_i16, Framer, Resampler, TARGET_RATE};
-use wowtype_voice::hotkey::{Action, Mode, TriggerConfig, VoiceTrigger};
-use wowtype_voice::vad::Vad;
-use wowtype_voice::wtlocal::{self, download, WtLocalChannel};
+use mytype_voice::asr::AsrChannel;
+use mytype_voice::audio::{downmix, to_i16, Framer, Resampler, TARGET_RATE};
+use mytype_voice::hotkey::{Action, Mode, TriggerConfig, VoiceTrigger};
+use mytype_voice::vad::Vad;
+use mytype_voice::wtlocal::{self, download, WtLocalChannel};
 
 /// 没在录音。
 pub const VOICE_IDLE: c_int = 0;
@@ -41,7 +41,7 @@ pub const VOICE_ERROR: c_int = 4;
 
 /// 模型状态。
 pub const MODEL_NONE: c_int = 0;
-/// 不再用：模型改在设置界面里下载，这里不会返回它（留着编号免得插件和核心对不上）。
+/// 不再用：模型改在设置界面里下载，这里不会返回它（留着编号免得外壳和核心对不上）。
 #[allow(dead_code)]
 pub const MODEL_DOWNLOADING: c_int = 1;
 pub const MODEL_LOADING: c_int = 2;
@@ -51,7 +51,7 @@ pub const MODEL_FAILED: c_int = 4;
 pub const MODEL_MISSING: c_int = 5;
 
 /// 没有模型时按热键显示的提示。
-const MISSING_HINT: &str = "没有语音模型，请在「WowType 设置 → 语音」里下载";
+const MISSING_HINT: &str = "没有语音模型，请在「MyType 设置 → 语音」里下载";
 
 /// 单次最长录音。和 SenseVoice 那套一样，误触不会一直录下去。
 const MAX_RECORDING: Duration = Duration::from_secs(120);
@@ -101,13 +101,13 @@ impl ModelSlot {
         let slot = self.clone();
         let dir = dir.to_path_buf();
         std::thread::Builder::new()
-            .name("wowtype-voice-model".into())
+            .name("mytype-voice-model".into())
             .spawn(move || {
                 let result = wtlocal::load(&dir).map(|_| ());
                 *slot.state.lock().unwrap() = match result {
                     Ok(()) => ModelState::Ready,
                     Err(e) => {
-                        eprintln!("wowtype: 语音模型不可用：{e:#}");
+                        eprintln!("mytype: 语音模型不可用：{e:#}");
                         ModelState::Failed(format!("{e}"))
                     }
                 };
@@ -143,7 +143,7 @@ impl ModelSlot {
     }
 }
 
-/// 工作线程与插件线程共享的状态。
+/// 工作线程与外壳线程共享的状态。
 struct Shared {
     /// 当前这次说话的编号；旧会话的结果对不上号就丢掉。
     session: u64,
@@ -151,7 +151,7 @@ struct Shared {
     text: String,
     /// 最近一次检测到说话的时间（点按模式靠它判断说完了）。
     voice_at: Option<Instant>,
-    /// 最近一块音频的音量，0–100（给插件画波形）。
+    /// 最近一块音频的音量，0–100（给外壳画波形）。
     level: u8,
 }
 
@@ -175,8 +175,8 @@ enum Msg {
     Cancel,
 }
 
-/// 语音句柄。只在插件线程用。
-pub struct WowtypeVoice {
+/// 语音句柄。只在外壳线程用。
+pub struct MyTypeVoice {
     dir: PathBuf,
     wav: Option<PathBuf>,
     model: Arc<ModelSlot>,
@@ -187,11 +187,11 @@ pub struct WowtypeVoice {
     text: CString,
 }
 
-impl WowtypeVoice {
+impl MyTypeVoice {
     fn new(dir: PathBuf) -> Self {
         Self {
             dir,
-            wav: std::env::var_os("WOWTYPE_VOICE_WAV").map(PathBuf::from),
+            wav: std::env::var_os("MYTYPE_VOICE_WAV").map(PathBuf::from),
             model: Arc::new(ModelSlot {
                 state: Mutex::new(ModelState::None),
                 changed: Condvar::new(),
@@ -255,7 +255,7 @@ impl WowtypeVoice {
             tx: tx.clone(),
         };
         let spawned = std::thread::Builder::new()
-            .name("wowtype-voice".into())
+            .name("mytype-voice".into())
             .spawn(move || worker.run(rx));
         if spawned.is_err() {
             self.fail("开不了录音线程");
@@ -328,7 +328,7 @@ struct Worker {
 /// 麦克风（或测试用的 WAV）。丢弃即停。
 enum Source {
     #[allow(dead_code)]
-    Mic(wowtype_voice::capture::Capture),
+    Mic(mytype_voice::capture::Capture),
     Wav,
 }
 
@@ -343,7 +343,7 @@ impl Worker {
 
     fn open(&self) -> anyhow::Result<Source> {
         if let Some(path) = &self.wav {
-            let (rate, channels, pcm) = wowtype_voice::read_wav(path)?;
+            let (rate, channels, pcm) = mytype_voice::read_wav(path)?;
             let mono: Vec<f32> = downmix(
                 &pcm.iter().map(|&v| v as f32 / 32768.0).collect::<Vec<_>>(),
                 channels,
@@ -355,7 +355,7 @@ impl Worker {
             return Ok(Source::Wav);
         }
         let tx = self.tx.clone();
-        let capture = wowtype_voice::capture::start(None, move |pcm| {
+        let capture = mytype_voice::capture::start(None, move |pcm| {
             let _ = tx.send(Msg::Pcm(pcm));
         })?;
         Ok(Source::Mic(capture))
@@ -365,7 +365,7 @@ impl Worker {
         let source = match self.open() {
             Ok(source) => source,
             Err(e) => {
-                eprintln!("wowtype: 开麦克风失败：{e:#}");
+                eprintln!("mytype: 开麦克风失败：{e:#}");
                 self.update(|s| {
                     s.phase = VOICE_ERROR;
                     s.text = "开不了麦克风".into();
@@ -500,10 +500,10 @@ impl Worker {
     }
 }
 
-/// 创建语音句柄；model_dir 为 NULL/空串时用默认目录（~/.local/share/wowtype/wtlocal）。
+/// 创建语音句柄；model_dir 为 NULL/空串时用默认目录（~/Library/Application Support/MyType/wtlocal）。
 /// 不碰麦克风、不读模型，第一次按热键时才读；从来不下载（模型在设置界面里下载）。
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_voice_new(model_dir: *const c_char) -> *mut WowtypeVoice {
+pub unsafe extern "C" fn mytype_voice_new(model_dir: *const c_char) -> *mut MyTypeVoice {
     let dir = if model_dir.is_null() {
         None
     } else {
@@ -514,11 +514,11 @@ pub unsafe extern "C" fn wowtype_voice_new(model_dir: *const c_char) -> *mut Wow
             .map(PathBuf::from)
     };
     let dir = dir.unwrap_or_else(download::default_dir);
-    Box::into_raw(Box::new(WowtypeVoice::new(dir)))
+    Box::into_raw(Box::new(MyTypeVoice::new(dir)))
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_voice_free(voice: *mut WowtypeVoice) {
+pub unsafe extern "C" fn mytype_voice_free(voice: *mut MyTypeVoice) {
     if !voice.is_null() {
         let mut voice = unsafe { Box::from_raw(voice) };
         voice.cancel();
@@ -527,7 +527,7 @@ pub unsafe extern "C" fn wowtype_voice_free(voice: *mut WowtypeVoice) {
 
 /// 热键按下。
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_voice_key_down(voice: *mut WowtypeVoice) {
+pub unsafe extern "C" fn mytype_voice_key_down(voice: *mut MyTypeVoice) {
     if let Some(voice) = unsafe { voice.as_mut() } {
         let actions = voice.trigger.on_down(Instant::now());
         voice.apply(actions);
@@ -536,7 +536,7 @@ pub unsafe extern "C" fn wowtype_voice_key_down(voice: *mut WowtypeVoice) {
 
 /// 热键松开。按住超过 300ms 算长按，松开即结束；更短算点按，继续听到说完（静音 1.5 秒）或再按一次。
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_voice_key_up(voice: *mut WowtypeVoice) {
+pub unsafe extern "C" fn mytype_voice_key_up(voice: *mut MyTypeVoice) {
     if let Some(voice) = unsafe { voice.as_mut() } {
         let actions = voice.trigger.on_up(Instant::now());
         voice.apply(actions);
@@ -545,16 +545,16 @@ pub unsafe extern "C" fn wowtype_voice_key_up(voice: *mut WowtypeVoice) {
 
 /// 不要这次的结果（按了 Esc、切走了输入框）。
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_voice_cancel(voice: *mut WowtypeVoice) {
+pub unsafe extern "C" fn mytype_voice_cancel(voice: *mut MyTypeVoice) {
     if let Some(voice) = unsafe { voice.as_mut() } {
         voice.cancel();
     }
 }
 
 /// 定时调用：推进状态机（点按模式的静音结束），返回 VOICE_* 状态。
-/// 文本用 wowtype_voice_text 取。
+/// 文本用 mytype_voice_text 取。
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_voice_poll(voice: *mut WowtypeVoice) -> c_int {
+pub unsafe extern "C" fn mytype_voice_poll(voice: *mut MyTypeVoice) -> c_int {
     match unsafe { voice.as_mut() } {
         Some(voice) => voice.poll(),
         None => VOICE_IDLE,
@@ -563,7 +563,7 @@ pub unsafe extern "C" fn wowtype_voice_poll(voice: *mut WowtypeVoice) -> c_int {
 
 /// 上一次 poll 对应的文本；下一次 poll 或释放前有效。
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_voice_text(voice: *const WowtypeVoice) -> *const c_char {
+pub unsafe extern "C" fn mytype_voice_text(voice: *const MyTypeVoice) -> *const c_char {
     match unsafe { voice.as_ref() } {
         Some(voice) => voice.text.as_ptr(),
         None => EMPTY.as_ptr() as *const c_char,
@@ -572,7 +572,7 @@ pub unsafe extern "C" fn wowtype_voice_text(voice: *const WowtypeVoice) -> *cons
 
 /// 正在听时最近的音量，0–100。
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_voice_level(voice: *const WowtypeVoice) -> c_int {
+pub unsafe extern "C" fn mytype_voice_level(voice: *const MyTypeVoice) -> c_int {
     match unsafe { voice.as_ref() } {
         Some(voice) => c_int::from(voice.shared.lock().unwrap().level),
         None => 0,
@@ -581,7 +581,7 @@ pub unsafe extern "C" fn wowtype_voice_level(voice: *const WowtypeVoice) -> c_in
 
 /// 模型状态，MODEL_*。
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_voice_model_state(voice: *const WowtypeVoice) -> c_int {
+pub unsafe extern "C" fn mytype_voice_model_state(voice: *const MyTypeVoice) -> c_int {
     match unsafe { voice.as_ref() } {
         Some(voice) => voice.model.code(),
         None => MODEL_NONE,
@@ -590,7 +590,7 @@ pub unsafe extern "C" fn wowtype_voice_model_state(voice: *const WowtypeVoice) -
 
 /// 是否点按模式（松开热键后还在听）。
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_voice_is_tap(voice: *const WowtypeVoice) -> c_int {
+pub unsafe extern "C" fn mytype_voice_is_tap(voice: *const MyTypeVoice) -> c_int {
     match unsafe { voice.as_ref() } {
         Some(voice) => (voice.trigger.is_recording() && voice.trigger.mode() == Mode::Tap) as c_int,
         None => 0,
@@ -603,8 +603,8 @@ mod tests {
 
     #[test]
     fn idle_until_key_and_cancel_resets() {
-        let dir = std::env::temp_dir().join(format!("wowtype-voice-none-{}", std::process::id()));
-        let mut voice = WowtypeVoice::new(dir);
+        let dir = std::env::temp_dir().join(format!("mytype-voice-none-{}", std::process::id()));
+        let mut voice = MyTypeVoice::new(dir);
         assert_eq!(voice.poll(), VOICE_IDLE);
         assert_eq!(voice.model.code(), MODEL_NONE);
         voice.cancel();
@@ -614,11 +614,11 @@ mod tests {
 
     #[test]
     fn key_without_model_hints_and_downloads_nothing() {
-        let root = std::env::temp_dir().join(format!("wowtype-nomodel-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("mytype-nomodel-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         let dir = root.join("wtlocal");
-        let mut voice = WowtypeVoice::new(dir.clone());
+        let mut voice = MyTypeVoice::new(dir.clone());
         let actions = voice.trigger.on_down(Instant::now());
         voice.apply(actions);
         assert!(voice.tx.is_none(), "没有模型不该开录音线程");

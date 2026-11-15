@@ -1,4 +1,4 @@
-//! WowType 拼音引擎骨架。
+//! MyType 拼音引擎骨架。
 //!
 //! 流水线：
 //! 输入预处理 -> 音节图 -> 束搜索（词典 + 二元 LM） -> 特征/线性打分 -> 候选。
@@ -225,7 +225,7 @@ impl Engine {
     }
 
     /// 加载微信输入法的字级神经语言模型（`nlrgpt2_nnlm.bin`），返回字表大小。
-    /// 模型不随 WowType 分发，见 `docs/DATA.md`。
+    /// 模型不随 MyType 分发，见 `docs/DATA.md`。
     pub fn load_nnlm<P: AsRef<std::path::Path>>(&self, path: P) -> Result<usize> {
         let model = nnlm::Nnlm::load(path)?;
         let size = model.vocab_size();
@@ -239,7 +239,7 @@ impl Engine {
         }
     }
 
-    /// 混上一个领域词级模型（用户拿自己的语料用 `wowtype-lmbuild` 训的），None 去掉。
+    /// 混上一个领域词级模型（用户拿自己的语料用 `mytype-lmbuild` 训的），None 去掉。
     /// 再设一次是换掉上一个，不会一层层叠着混。权重是 [`lm::DOMAIN_LM_WEIGHT`]。
     pub fn set_domain_lm(&mut self, model: Option<Arc<dyn LanguageModel>>) {
         self.lm = match model {
@@ -2479,7 +2479,7 @@ mod tests {
         let tsv = "shi\t是\t900\nshi\t事\t800\n";
         let e = engine(tsv);
         e.record_selection_at("事", now_ms());
-        let dir = std::env::temp_dir().join(format!("wowtype-hist-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("mytype-hist-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("history.tsv");
         e.save_history(&path).unwrap();
@@ -2874,7 +2874,7 @@ mod tests {
         assert!(!e.forget_word("我特"), "第二次没东西可忘");
 
         // 用户词全删光了也要存盘，不然旧的 user.tsv 留着，重启又回来
-        let dir = std::env::temp_dir().join(format!("wowtype-forget-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("mytype-forget-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("user.tsv");
         std::fs::write(&path, "wo wo te\t我特\t5000\n").unwrap();

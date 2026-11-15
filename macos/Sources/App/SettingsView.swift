@@ -1,10 +1,8 @@
 // 设置窗口的界面（SwiftUI，macOS 12 起）。
 //
-// 页面、分组、文字照 Linux 的设置界面（settings/wowtype-config 的 build_general / build_input / build_emoji /
-// build_voice / build_translate / build_words），名字和顺序两边一样，选项说明对得上 fcitx5-addon/src/wowtype_engine.h。macOS 还没有的功能
-// （检查更新）不列出来，它的键在 wowtype.conf 里原样留着。
+// 页面：常规、输入、表情、语音、翻译、自定义词、关于。
 // 每行一个标题，副标题最多一行；说明、注意事项、例子、来源、许可放进 ⓘ（InfoButton）或「更多选项」折叠里。
-// 样子也照 Linux：薄荷绿渐变侧栏、绿色选中块、白色圆角卡片。
+// 样子：薄荷绿渐变侧栏、绿色选中块、白色圆角卡片。
 
 import AppKit
 import SwiftUI
@@ -89,6 +87,7 @@ struct SettingsView: View {
         case .voice: VoicePage(model: model)
         case .translate: TranslatePage(model: model)
         case .words: WordsPage(model: model)
+        case .about: AboutPage(model: model)
         }
     }
 }
@@ -182,11 +181,11 @@ private struct ToastView: View {
 
 // MARK: 常规
 
-private let issuesURL = URL(string: "https://github.com/yxxbc/WowType/issues/new")!
+private let issuesURL = URL(string: "https://github.com/yxxbc/MyType/issues/new")!
 /// 系统设置的「键盘」（只打开，不改系统设置）
 private let keyboardSettingsURL = URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension")!
 
-/// 两个快捷键行的说明，和 Linux 设置的一样（settings/wowtype-config 的 TOGGLE_KEY_INFO、TRANSLATE_MODE_KEY_INFO）
+/// 两个快捷键行的说明，（settings/mytype-config 的 TOGGLE_KEY_INFO、TRANSLATE_MODE_KEY_INFO）
 private let toggleKeyInfo = "按它在中文、英文之间切（在「译」里按回到中文）。单按 Shift 照常能用。"
 private let translateModeKeyInfo = "按它进「译」，在「译」里再按回到原来的模式。设了它，单按 Shift 就只在中文、英文之间切。\n\n"
     + "要先在「翻译」页打开互译；没打开、密码框里这个键交给应用。"
@@ -245,7 +244,7 @@ private struct GeneralPage: View {
         }
     }
 
-    /// 方向键那一行的副标题：这种用法和候选排列下各个方向键做什么（和 Linux 设置一样）
+    /// 方向键那一行的副标题：这种用法和候选排列下各个方向键做什么
     private var arrowKeysSubtitle: String {
         switch (model.config.arrowKeys, model.config.horizontal) {
         case (.caret, _): return "↑ ↓ 选词，← → 在拼音里移动光标"
@@ -262,7 +261,7 @@ private let shuangpinSchemes: [(String, String)] = [
     ("智能 ABC", "ABC"), ("紫光双拼", "Ziguang"), ("拼音加加", "PinyinJiajia"),
 ]
 
-private let fuzzyGroups: [(String, WritableKeyPath<WowtypeConfig, Bool>)] = [
+private let fuzzyGroups: [(String, WritableKeyPath<MyTypeConfig, Bool>)] = [
     ("z = zh", \.fuzzyZh), ("c = ch", \.fuzzyCh), ("s = sh", \.fuzzySh), ("n = l", \.fuzzyNL),
     ("f = h", \.fuzzyFH), ("r = l", \.fuzzyRL), ("an = ang", \.fuzzyAn), ("an = ai", \.fuzzyAnAi),
     ("ian = iang", \.fuzzyIan), ("uan = uang", \.fuzzyUan), ("huang = wang", \.fuzzyHuangWang),
@@ -289,7 +288,7 @@ private struct InputPage: View {
                 if model.lexiconKind != .wanxiang { model.useWanxiang() }
             } trailing: {
                 if !model.lexiconBusy {
-                    // 发布页上没有万象包时不显示「下载」（和 Linux 一样，可以从文件安装）
+                    // 发布页上没有万象包时不显示「下载」（和以前一样，可以从文件安装）
                     let noAsset = model.release != nil && model.release?.wanxiang == nil
                     if (model.wanxiangVersion == nil || model.wanxiangUpdate != nil) && !noAsset {
                         Button(model.wanxiangVersion == nil ? "下载" : "更新") { model.installWanxiang() }
@@ -313,11 +312,11 @@ private struct InputPage: View {
         .onAppear { model.checkRelease() }
 
         PrefGroup("输入方案") {
-            RadioRow(title: WowtypeConfig.InputScheme.quanpin.name, subtitle: "全拼，也能只打声母", selected: model.config.inputScheme == .quanpin) {
+            RadioRow(title: MyTypeConfig.InputScheme.quanpin.name, subtitle: "全拼，也能只打声母", selected: model.config.inputScheme == .quanpin) {
                 model.config.inputScheme = .quanpin
             }
             RowDivider()
-            RadioRow(title: WowtypeConfig.InputScheme.shuangpin.name, subtitle: "每个字打两个键", selected: model.config.shuangpin) {
+            RadioRow(title: MyTypeConfig.InputScheme.shuangpin.name, subtitle: "每个字打两个键", selected: model.config.shuangpin) {
                 model.config.inputScheme = .shuangpin
             }
             if model.config.shuangpin {
@@ -328,7 +327,7 @@ private struct InputPage: View {
                           isOn: $model.config.shuangpinShowKeys)
             }
             RowDivider()
-            RadioRow(title: WowtypeConfig.InputScheme.wubi86.name,
+            RadioRow(title: MyTypeConfig.InputScheme.wubi86.name,
                      subtitle: model.wubiTableAvailable ? "86 版，z 键临时打拼音"
                          : "没有找到五笔码表 wubi86.tsv，重新安装 MyType 可以修好",
                      selected: model.config.wubi) {
@@ -426,8 +425,8 @@ private struct InputPage: View {
         }
     }
 
-    /// 快捷键下拉框选的键名（同 wowtype.conf）；空串是不用
-    private func shortcutBinding(_ path: WritableKeyPath<WowtypeConfig, Shortcut?>) -> Binding<String> {
+    /// 快捷键下拉框选的键名（同 mytype.conf）；空串是不用
+    private func shortcutBinding(_ path: WritableKeyPath<MyTypeConfig, Shortcut?>) -> Binding<String> {
         Binding(get: { model.config[keyPath: path]?.name ?? "" },
                 set: { model.config[keyPath: path] = $0.isEmpty ? nil : Shortcut(name: $0) })
     }
@@ -445,7 +444,7 @@ private struct InputPage: View {
         return shuangpinSchemes + [("其他（\(current)）", current)]
     }
 
-    /// 和 Linux 设置里的一样：装了的版本、有没有新版、下载进度
+    /// 装了的版本、有没有新版、下载进度
     private var wanxiangSubtitle: String {
         if let progress = model.lexiconProgress {
             return progress
@@ -489,7 +488,7 @@ private struct EmojiPage: View {
         }
     }
 
-    /// 键名同 wowtype.conf 的 EmojiKey；空串是不用快捷键
+    /// 键名同 mytype.conf 的 EmojiKey；空串是不用快捷键
     private var emojiKey: Binding<String> {
         Binding(get: { model.config.emojiKey?.name ?? "" },
                 set: { model.config.emojiKey = $0.isEmpty ? nil : Shortcut(name: $0) })
@@ -501,7 +500,7 @@ private struct EmojiPage: View {
     }
 }
 
-/// 快捷键（键名同 wowtype.conf）配上 Mac 键盘上的叫法：Control + .、Option + X
+/// 快捷键（键名同 mytype.conf）配上 Mac 键盘上的叫法：Control + .、Option + X
 private func shortcuts(_ names: [String]) -> [(String, String)] {
     names.map { (Shortcut(name: $0)?.label ?? $0, $0) }
 }
@@ -513,7 +512,7 @@ private func shortcutOptions(_ options: [(String, String)], current: String) -> 
 
 // MARK: 语音
 
-/// 和 Linux 设置的「语音」页一样：开关、语音键、复制到剪贴板，下面是识别模型。没有模型时开关灰掉、显示成关着。
+/// 和设置窗口的「语音」页一样：开关、语音键、复制到剪贴板，下面是识别模型。没有模型时开关灰掉、显示成关着。
 private struct VoicePage: View {
     @ObservedObject var model: SettingsModel
 
@@ -553,7 +552,7 @@ private struct VoicePage: View {
         }
     }
 
-    /// 键名同 wowtype.conf 的 VoiceKey（fcitx5 键名）；Linux 拷过来的 Mac 上没有的键（Menu）单独列出来
+    /// 键名同 mytype.conf 的 VoiceKey；旧版拷过来的 Mac 上没有的键（Menu）单独列出来
     private var voiceKeyOptions: [(String, String)] {
         let options = VoiceKey.presets.map { ($0.label, $0.name) }
         let current = model.config.voiceKey
@@ -566,11 +565,11 @@ private struct VoicePage: View {
 
 // MARK: 翻译
 
-/// 和 Linux 设置里的一样：名字、接口地址、模型框空着时建议的模型。列表在 Shared/Config.swift，
+/// 名字、接口地址、模型框空着时建议的模型。列表在 Shared/Config.swift，
 /// 按键测试对照 spec/config.json
-private let translateProviders = WowtypeConfig.translateProviders
+private let translateProviders = MyTypeConfig.translateProviders
 
-private let translateLanguages = WowtypeConfig.translateLanguages
+private let translateLanguages = MyTypeConfig.translateLanguages
 
 private struct TranslatePage: View {
     @ObservedObject var model: SettingsModel
@@ -601,7 +600,7 @@ private struct TranslatePage: View {
         }
     }
 
-    /// 「互译」那一行的状态（和 Linux 设置一样）：还差什么、Shift 关掉了切不到「译」、怎么切
+    /// 「互译」那一行的状态：还差什么、Shift 关掉了切不到「译」、怎么切
     private var translateStatus: String {
         if !model.translateConfigured {
             return model.config.translateLocal ? "先在下面下载翻译模型" : "先在下面填好翻译服务"
@@ -688,7 +687,7 @@ private struct TranslatePage: View {
         translateProviders.first { $0.url == model.config.translateBaseUrl }?.model ?? ""
     }
 
-    private func trimmed(_ path: WritableKeyPath<WowtypeConfig, String>) -> Binding<String> {
+    private func trimmed(_ path: WritableKeyPath<MyTypeConfig, String>) -> Binding<String> {
         Binding(get: { model.config[keyPath: path] },
                 set: { model.config[keyPath: path] = $0.trimmingCharacters(in: .whitespacesAndNewlines) })
     }
@@ -857,7 +856,6 @@ private struct SearchField: View {
 //   - 组：PrefGroup("词库", info: "…", links: [("项目主页", url)]) { … }，ⓘ 在组标题右边
 //   - 行：SwitchRow / PickerRow / RadioRow / ActionRow / ExpanderRow 的 info: "…"，ⓘ 在开关、下拉框前面
 //   - 别的地方：InfoButton("…", links: […]) 直接放
-// Linux 那边对应的是 SettingsWindow.info_button / add_info（settings/wowtype-config）。
 
 /// ⓘ 小按钮，点开弹出说明文字（可以选中拷贝），links 是说明下面的链接。
 private struct InfoButton: View {
@@ -1207,5 +1205,104 @@ private struct EntryRow<Field: View>: View {
                 .textFieldStyle(.plain)
         }
         .rowPadding()
+    }
+}
+
+// MARK: 关于
+
+/// 设置侧栏「关于」：版本、检查更新（发布页 302，不用 API）、下载并安装、链接和许可。
+private struct AboutPage: View {
+    @ObservedObject var model: SettingsModel
+    @Environment(\.palette) private var palette
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            HStack(spacing: 16) {
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .frame(width: 64, height: 64)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("MyType").font(.system(size: 26, weight: .heavy))
+                    Text("macOS 拼音输入法 · 版本 \(appVersion)")
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                }
+            }
+            updateGroup
+            linksGroup
+            creditsGroup
+        }
+        .onAppear { model.checkUpdatesOnce() }
+    }
+
+    private var updateGroup: some View {
+        PrefGroup("更新") {
+            ActionRow(title: "当前版本", subtitle: "MyType \(appVersion)")
+            RowDivider()
+            ActionRow(title: "最新版本", subtitle: updateSubtitle) {
+                HStack(spacing: 8) {
+                    Button("检查更新") { model.checkUpdates(manual: true) }
+                        .disabled(model.updateChecking || model.updateInstalling)
+                    if model.updateLatest != nil {
+                        Button("下载并安装") { model.updateNow() }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(model.updateInstalling)
+                    } else {
+                        Button("打开发布页") { model.openReleasePage() }
+                    }
+                }
+            }
+            if let progress = model.updateProgress {
+                RowDivider()
+                ActionRow(title: "进度", subtitle: progress)
+            }
+            RowDivider()
+            SwitchRow(title: "自动检查更新",
+                      subtitle: "启动后最多一天检查一次，有新版本在「关于」页提示",
+                      info: "只请求 GitHub 上的发布页地址，看最新版本号；不发送任何输入内容，也不用 GitHub API。",
+                      isOn: $model.config.checkUpdate)
+        }
+    }
+
+    private var updateSubtitle: String {
+        if model.updateInstalling { return "正在安装…" }
+        if model.updateChecking { return "正在检查…" }
+        if let latest = model.updateLatest { return "有新版 MyType \(latest.version)（\(latest.package)）" }
+        if let error = model.updateError { return error }
+        if !model.updateChecked { return "还没检查" }
+        return "已经是最新版（MyType \(appVersion)）"
+    }
+
+    private var linksGroup: some View {
+        PrefGroup("链接") {
+            ActionRow(title: "项目主页", subtitle: "github.com/\(Update.repo)",
+                      action: { open("https://github.com/\(Update.repo)") }) {
+                Image(systemName: "arrow.up.right.square").foregroundColor(.secondary)
+            }
+            RowDivider()
+            ActionRow(title: "问题反馈", subtitle: "github.com/\(Update.repo)/issues",
+                      action: { open("https://github.com/\(Update.repo)/issues") }) {
+                Image(systemName: "arrow.up.right.square").foregroundColor(.secondary)
+            }
+            RowDivider()
+            ActionRow(title: "更新记录", subtitle: "github.com/\(Update.repo)/releases",
+                      action: { open("https://github.com/\(Update.repo)/releases") }) {
+                Image(systemName: "arrow.up.right.square").foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private var creditsGroup: some View {
+        PrefGroup("许可与数据") {
+            ActionRow(title: "代码", subtitle: "MIT / Apache-2.0")
+            RowDivider()
+            ActionRow(title: "词库", subtitle: "雾凇拼音（GPL-3.0）、万象拼音（CC BY 4.0）")
+            RowDivider()
+            ActionRow(title: "其它数据", subtitle: "五笔码表 rime-wubi（LGPL-3.0）、简繁表 OpenCC（Apache-2.0）、Unicode License v3")
+        }
+    }
+
+    private func open(_ link: String) {
+        if let url = URL(string: link) { NSWorkspace.shared.open(url) }
     }
 }

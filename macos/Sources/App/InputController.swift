@@ -30,7 +30,7 @@ class MyTypeInputController: IMKInputController {
     /// 互译：在等译文时每 50 毫秒取一次结果（主线程的 run loop 上，菜单打开时也走）
     private var translateTimer: Timer?
     static let translatePollInterval: TimeInterval = 0.05
-    /// 切中 / 英 / 译以后在光标下面亮一下的提示，到时间收起（和 Linux 上 fcitx5 的提示一样）
+    /// 切中 / 英 / 译以后在光标下面亮一下的提示，到时间收起（和以前提示一样）
     private var modeHintTimer: Timer?
     static let modeHintDuration: TimeInterval = 1
 
@@ -164,7 +164,7 @@ class MyTypeInputController: IMKInputController {
         lastMarked = ("", 0)
         lastInserted = 0
         syncComposer(force: true)
-        // 剪贴板历史（设置里打开时）：切换输入框时看一眼（和 Linux 一样，另外打开工具栏的剪贴板页时也看）
+        // 剪贴板历史（设置里打开时）：切换输入框时看一眼（和以前一样，另外打开工具栏的剪贴板页时也看）
         AppState.shared.sampleClipboard()
     }
 
@@ -189,12 +189,15 @@ class MyTypeInputController: IMKInputController {
 
     override func menu() -> NSMenu! {
         let menu = NSMenu()
-        let item = NSMenuItem(title: "MyType \(appVersion)", action: nil, keyEquivalent: "")
+        let available = UpdateState.available(current: appVersion)
+        let title = available.map { "MyType \(appVersion)（可更新到 \($0.version)）" } ?? "MyType \(appVersion)"
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         item.isEnabled = false
         menu.addItem(item)
         menu.addItem(.separator())
         // 设置窗口是另一个进程（SettingsApp）；直接改文件的入口在设置窗口的「文件」菜单里
         for (title, action) in [("MyType 设置…", #selector(openSettings)),
+                                ("关于 MyType…", #selector(openAbout)),
                                 ("自定义词…", #selector(openCustomWords)),
                                 ("设置互译 API Key…", #selector(editTranslateKey)),
                                 ("打开数据目录", #selector(openDataFolder))] {
@@ -207,6 +210,10 @@ class MyTypeInputController: IMKInputController {
 
     @objc private func openSettings() {
         SettingsApp.open()
+    }
+
+    @objc private func openAbout() {
+        SettingsApp.open(page: .about)
     }
 
     @objc private func openCustomWords() {

@@ -1,6 +1,6 @@
 //! 本地翻译模型的运行时：按需起一个 `llama-server`，闲置一段时间后停掉。
 //!
-//! 不把 llama.cpp 编进插件：`llama-server` 用系统里装的（发行版的 llama.cpp 包），没有就用
+//! 不把 llama.cpp 编进外壳：`llama-server` 用系统里装的（发行版的 llama.cpp 包），没有就用
 //! 设置界面下载的官方二进制（[`downloaded_server`]），我们只管它的生命周期。
 //!
 //! - 第一次翻译时才启动：没打开互译、没选本地模型时，不起进程、不占端口
@@ -75,14 +75,14 @@ fn find_server(
     .or_else(|| downloaded.filter(|p| is_executable(p)))
 }
 
-/// 设置界面「下载」放 llama-server 的地方：`$XDG_DATA_HOME/wowtype/llama/llama-server`
+/// 设置界面「下载」放 llama-server 的地方：`$XDG_DATA_HOME/mytype/llama/llama-server`
 /// （llama.cpp 官方发布的二进制，和它的动态库在同一个目录）。
 pub fn downloaded_server() -> Option<PathBuf> {
     let data = match std::env::var_os("XDG_DATA_HOME").filter(|v| !v.is_empty()) {
         Some(dir) => PathBuf::from(dir),
         None => PathBuf::from(std::env::var_os("HOME")?).join(".local/share"),
     };
-    Some(data.join("wowtype/llama/llama-server"))
+    Some(data.join("mytype/llama/llama-server"))
 }
 
 fn is_executable(path: &Path) -> bool {
@@ -210,7 +210,7 @@ impl LocalServer {
                 s.starting = true;
                 let generation = s.generation;
                 drop(s);
-                // 等模型载入：不拿着锁，免得插件线程的 poll / 配置被卡住
+                // 等模型载入：不拿着锁，免得外壳线程的 poll / 配置被卡住
                 let ready = wait_healthy(port, LOAD_TIMEOUT, || {
                     let mut s = lock.lock().unwrap();
                     s.generation == generation && alive(&mut s)
@@ -337,7 +337,7 @@ pub fn health(port: u16) -> Option<u16> {
 /// 看门狗：闲置超过 idle 就停掉。配置换了（generation 变了）就退出。
 fn spawn_watchdog(state: Arc<(Mutex<State>, Condvar)>, generation: u64, idle: Duration) {
     thread::Builder::new()
-        .name("wowtype-llama-idle".into())
+        .name("mytype-llama-idle".into())
         .spawn(move || {
             let (lock, cvar) = &*state;
             let mut s = lock.lock().unwrap();
@@ -457,7 +457,7 @@ mod tests {
                 use std::sync::atomic::{AtomicUsize, Ordering};
                 static N: AtomicUsize = AtomicUsize::new(0);
                 let p = std::env::temp_dir().join(format!(
-                    "wowtype-llama-test-{}-{}",
+                    "mytype-llama-test-{}-{}",
                     std::process::id(),
                     N.fetch_add(1, Ordering::SeqCst)
                 ));
@@ -619,7 +619,7 @@ mod tests {
     #[test]
     fn server_lookup_prefers_path_then_downloaded() {
         use std::os::unix::fs::PermissionsExt;
-        let dir = std::env::temp_dir().join(format!("wowtype-llama-find-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("mytype-llama-find-{}", std::process::id()));
         let exe = |sub: &str| {
             let d = dir.join(sub);
             std::fs::create_dir_all(&d).unwrap();

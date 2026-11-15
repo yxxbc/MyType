@@ -1,7 +1,7 @@
 // 本地翻译模型（腾讯混元 HY-MT 1.5 1.8B）和跑它的 llama-server：下载地址、校验值、大小。
-// 模型和 Linux 设置（settings/wowtype-config 的 LOCAL_MODEL_*）是同一个文件；llama-server 用同一个构建
+// 模型和 llama-server 的地址、大小、SHA256 钉在这里；
 // （LLAMA_BUILD），换成官方的 macOS 包。要换版本就改这里，大小和 SHA256 一起改。
-// 下载、解压在 App 层（LocalModelInstaller），这里只放规矩，不依赖 Foundation，测试在 Linux 上也能跑。
+// 下载、解压在 App 层（LocalModelInstaller），这里只放规矩，不依赖 Foundation，不依赖 Foundation。
 
 public enum LocalModel {
     public static let fileName = "HY-MT1.5-1.8B-Q4_K_M.gguf"
@@ -14,7 +14,7 @@ public enum LocalModel {
     public static let terms = "模型属于腾讯，用的是《腾讯混元社区许可协议》：不适用于欧盟、英国和韩国境内，"
         + "月活超过 1 亿的产品要另外向腾讯申请。模型从 Hugging Face 下载，MyType 不分发它。"
 
-    /// llama.cpp 官方发布的构建（MIT 许可），和 Linux 的一样
+    /// llama.cpp 官方发布的构建（MIT 许可），和 旧版的一样
     public static let llamaBuild = "b12110"
     public static let llamaPage = "https://github.com/ggml-org/llama.cpp"
     /// 官方 macOS 包要 macOS 13.3 以上（包里程序的 LC_BUILD_VERSION minos）
@@ -70,7 +70,7 @@ public enum LocalModel {
 
     // MARK: 显示
 
-    /// 「1.15 GB」「17 MB」：和 Linux 设置的 human_size 一样（按 1000 进位，GB 留两位小数，MB 取整）
+    /// 「1.15 GB」「17 MB」：和设置窗口的 human_size 一样（按 1000 进位，GB 留两位小数，MB 取整）
     public static func sizeText(_ bytes: Int64) -> String {
         if bytes >= 1_000_000_000 {
             let hundredths = (bytes + 5_000_000) / 10_000_000

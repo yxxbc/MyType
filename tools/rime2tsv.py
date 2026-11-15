@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""把 Rime 词库（.dict.yaml）转成 WowType 的 lexicon TSV。
+"""把 Rime 词库（.dict.yaml）转成 MyType 的 lexicon TSV。
 
 用法：
     python3 tools/rime2tsv.py rime_ice.dict.yaml > lexicon.tsv
@@ -320,7 +320,7 @@ def selftest():
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Rime 词库转 WowType TSV")
+    ap = argparse.ArgumentParser(description="Rime 词库转 MyType TSV")
     ap.add_argument("path", nargs="?", help="rime .dict.yaml")
     ap.add_argument("--min-weight", type=float, default=0.0)
     ap.add_argument("--no-import", action="store_true", help="不处理 import_tables")

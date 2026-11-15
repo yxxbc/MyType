@@ -1,5 +1,5 @@
 // macOS 外壳的按键测试：用一个假的输入框（FakeClient）把按键喂给 Composer，看上屏、编辑区、候选框。
-// 不依赖 AppKit，Linux 和 macOS 都能跑（macos/test.sh）。
+// 不依赖 AppKit，不依赖 AppKit，macOS 上直接跑（macos/test.sh）。
 //
 //   harness <lexicon.tsv> [english.txt]
 //
@@ -71,7 +71,7 @@ func writeTestLexicon() -> String {
     for (i, ch) in shi.enumerated() {
         lines.append("shi\t\(ch)\t\(60000 - i * 1000)")
     }
-    let path = "/tmp/wowtype-macos-harness-\(getpid()).tsv"
+    let path = "/tmp/mytype-macos-harness-\(getpid()).tsv"
     guard let f = fopen(path, "w") else {
         print("FAIL 写测试词库 \(path)")
         exit(1)
@@ -91,7 +91,7 @@ guard let engine = Engine(lexicon: lexicon) else {
 if args.count > 2 {
     engine.loadEnglish(args[2])
 } else {
-    let english = "/tmp/wowtype-macos-harness-\(getpid()).en.txt"
+    let english = "/tmp/mytype-macos-harness-\(getpid()).en.txt"
     writeFile(english, "hello\niPhone\n")
     engine.loadEnglish(english)
     unlink(english)
@@ -164,7 +164,7 @@ do {
     let (c, client) = fresh()
     type(c, "shi")
     let all = c.allCandidates()
-    // 一直按右键：光标越过一页时候选框跟着翻页（fcitx5 那边出过「光标到了下一页、框还停在第一页」）
+    // 一直按右键：光标越过一页时候选框跟着翻页（那边出过「光标到了下一页、框还停在第一页」）
     for _ in 0..<(c.pageSize + 2) {
         _ = c.handle(.key(Keysym.right))
     }
@@ -293,7 +293,7 @@ do {
 }
 
 do {
-    // 没在打字时的大写字母和 Linux 一样进编辑区（大写原样保留），出英文候选
+    // 没在打字时的大写字母和以前一样进编辑区（大写原样保留），出英文候选
     let (c, client) = fresh()
     check(c.handle(.char("H", .shift)) && c.isComposing, "大写字母开始编辑区", c.input)
     type(c, "ello")
@@ -453,11 +453,11 @@ do {
     check(!c.handle(.key(Keysym.backspace, .control)), "没在打字时 Control+Delete 交给应用")
 }
 
-// MARK: 设置（wowtype.conf）
+// MARK: 设置（mytype.conf）
 
 /// 照设置配好引擎和会话；测完把引擎改回默认（所有测试共用一个引擎）。
-func withConfig(_ change: (inout WowtypeConfig) -> Void, _ body: (Composer, FakeClient) -> Void) {
-    var config = WowtypeConfig()
+func withConfig(_ change: (inout MyTypeConfig) -> Void, _ body: (Composer, FakeClient) -> Void) {
+    var config = MyTypeConfig()
     change(&config)
     let problems = engine.apply(config, conversion: "core/data/s2t.tsv")
     if !problems.isEmpty {
@@ -466,20 +466,20 @@ func withConfig(_ change: (inout WowtypeConfig) -> Void, _ body: (Composer, Fake
     let (c, client) = fresh()
     c.apply(config)
     body(c, client)
-    engine.apply(WowtypeConfig())
+    engine.apply(MyTypeConfig())
 }
 
 do {
-    // 默认值和 Linux 的 WowtypeConfig 一样
-    let d = WowtypeConfig()
+    // 默认值和 旧版的 MyTypeConfig 一样
+    let d = MyTypeConfig()
     check(d.horizontal && d.pageSize == 9 && d.pageKeys == 1, "默认横排、每页 9 个、- = 翻页")
     check(!d.fuzzy && d.fuzzyGroups == 1 | 2 | 4 | 64 | 128 | 256 | 512 | 1024, "默认模糊音关，分组同核心默认", "\(d.fuzzyGroups)")
     check(d.typoCorrection && !d.rareExtChars && !d.shuangpin && d.shuangpinScheme == "Ziranma", "默认纠错开、双拼关（自然码）")
     check(d.shiftToggle == .both && !d.traditional && !d.halfwidthPunct && d.selectKeys == .off, "默认 Shift 切换、简体、全角标点")
     check(d.pickChar && d.dateTime && d.calculator && d.emojiSuggest && d.autoSpaceFlags == 0 && d.lexicon.isEmpty,
           "默认以词定字、日期、计算器、emoji 推荐开，自动空格关，自带词库")
-    check(WowtypeConfig.parse(WowtypeConfig.template()) == d, "写出来的设置模板读回来是默认值")
-    check(WowtypeConfig.load(path: "/nonexistent/wowtype.conf") == d, "没有设置文件用默认值")
+    check(MyTypeConfig.parse(MyTypeConfig.template()) == d, "写出来的设置模板读回来是默认值")
+    check(MyTypeConfig.load(path: "/nonexistent/mytype.conf") == d, "没有设置文件用默认值")
 
     let text = """
     # 注释
@@ -505,20 +505,20 @@ do {
     [Hotkey]
     PageSize=4
     """
-    let c = WowtypeConfig.parse(text)
+    let c = MyTypeConfig.parse(text)
     check(!c.horizontal && c.pageSize == 9, "竖排；每页个数超出 3–9 取 9；[分组] 里的不算", "\(c.pageSize)")
     check(c.fuzzy && c.fuzzyGroups == (1 | 2 | 4 | 64 | 128 | 256 | 512 | 1024) & ~1 | 8, "模糊音分组", "\(c.fuzzyGroups)")
     check(!c.typoCorrection, "键值两边的空格不算")
     check(c.shuangpin && c.shuangpinScheme == "Xiaohe", "双拼方案", c.shuangpinScheme)
-    // 和 fcitx5 一样区分大小写，认不出的回到默认（三端一样，见 spec/config.json 的 readRules）
-    check(WowtypeConfig.parse("ShuangpinScheme=xiaohe").shuangpinScheme == "Ziranma"
-          && WowtypeConfig.parse("ShuangpinScheme=Dvorak").shuangpinScheme == "Ziranma", "双拼方案写错、大小写不对用默认")
+    // 和以前一样区分大小写，认不出的回到默认（见 spec/config.json，见 spec/config.json 的 readRules）
+    check(MyTypeConfig.parse("ShuangpinScheme=xiaohe").shuangpinScheme == "Ziranma"
+          && MyTypeConfig.parse("ShuangpinScheme=Dvorak").shuangpinScheme == "Ziranma", "双拼方案写错、大小写不对用默认")
     check(c.shiftToggle == .right && c.halfwidthPunct && c.selectKeys == .semicolonQuote, "枚举值")
     check(c.pageKeys == 2, "翻页键", "\(c.pageKeys)")
     check(c.autoSpaceFlags == 1, "自动空格只加字母", "\(c.autoSpaceFlags)")
     check(c.lexicon == "~/dicts/my lexicon.tsv" && c.candidateFontSize == 20, "带引号的值、字号", c.lexicon)
     check(!c.traditional, "认不出的值保持默认")
-    check(WowtypeConfig.parse("PageSize=5\r\nFuzzy=True\r\n") == { var w = WowtypeConfig(); w.pageSize = 5; w.fuzzy = true; return w }(),
+    check(MyTypeConfig.parse("PageSize=5\r\nFuzzy=True\r\n") == { var w = MyTypeConfig(); w.pageSize = 5; w.fuzzy = true; return w }(),
           "Windows 换行（\\r\\n）")
 }
 
@@ -537,11 +537,11 @@ withConfig({ $0.inputScheme = .shuangpin }) { c, client in
 }
 
 do {
-    var config = WowtypeConfig()
+    var config = MyTypeConfig()
     config.inputScheme = .shuangpin
     config.shuangpinScheme = "Dvorak"
     check(!engine.apply(config).isEmpty, "不认识的双拼方案报出来（改用自然码）")
-    engine.apply(WowtypeConfig())
+    engine.apply(MyTypeConfig())
 }
 
 withConfig({ _ in }) { c, client in
@@ -551,14 +551,14 @@ withConfig({ _ in }) { c, client in
 
 // 五笔：码表用 rime-wubi 的原样几行
 do {
-    check(WowtypeConfig.parse("Shuangpin=True\n").inputScheme == .shuangpin, "旧设置 Shuangpin=True 读成双拼")
-    check(WowtypeConfig.parse("InputScheme=Wubi86\nShuangpin=True\n").inputScheme == .wubi86, "有 InputScheme 时不看 Shuangpin")
-    var wubi = WowtypeConfig()
+    check(MyTypeConfig.parse("Shuangpin=True\n").inputScheme == .shuangpin, "旧设置 Shuangpin=True 读成双拼")
+    check(MyTypeConfig.parse("InputScheme=Wubi86\nShuangpin=True\n").inputScheme == .wubi86, "有 InputScheme 时不看 Shuangpin")
+    var wubi = MyTypeConfig()
     wubi.inputScheme = .wubi86
     let written = wubi.serialized(into: "Shuangpin=True\n")
     check(!written.contains("Shuangpin=") && written.contains("InputScheme=Wubi86"), "写回去删掉旧的 Shuangpin 开关", written)
 
-    var noTable = WowtypeConfig()
+    var noTable = MyTypeConfig()
     noTable.inputScheme = .wubi86
     check(engine.apply(noTable, wubi: nil).contains { $0.contains("五笔码表") }, "没有码表时报出来")
     let (c, client) = fresh()
@@ -566,22 +566,22 @@ do {
     type(c, "nihao")
     check(client.page?.aux?.contains("没有五笔码表") == true && client.page?.texts.first == "你好",
           "没有码表时照全拼打，候选框上方说为什么", "\(client.page?.aux ?? "nil") \(client.page?.texts ?? [])")
-    engine.apply(WowtypeConfig())
+    engine.apply(MyTypeConfig())
 
-    let table = "/tmp/wowtype-macos-harness-\(getpid()).wubi86.tsv"
+    let table = "/tmp/mytype-macos-harness-\(getpid()).wubi86.tsv"
     writeFile(table, "g\t一\t2015124793\nggl\t一\t2830000000\nggll\t一\t2830000000\nv\t发\t395047607\n"
               + "w\t人\t1002212710\nwq\t你\t597727619\nwqin\t您\t3090000000\nwqvb\t你好\t70500000\n"
               + "wqvb\t您好\t34700000\n")
     defer { unlink(table) }
-    func withWubi(_ change: (inout WowtypeConfig) -> Void = { _ in }, _ body: (Composer, FakeClient) -> Void) {
-        var config = WowtypeConfig()
+    func withWubi(_ change: (inout MyTypeConfig) -> Void = { _ in }, _ body: (Composer, FakeClient) -> Void) {
+        var config = MyTypeConfig()
         config.inputScheme = .wubi86
         change(&config)
         check(engine.apply(config, wubi: table).isEmpty, "五笔码表载入")
         let (c, client) = fresh()
         c.apply(config)
         body(c, client)
-        engine.apply(WowtypeConfig())
+        engine.apply(MyTypeConfig())
     }
     withWubi { c, client in
         type(c, "ggll")
@@ -751,25 +751,25 @@ withConfig({ _ in }) { c, _ in
 }
 
 do {
-    // 设置窗口写回 wowtype.conf：只改认识的键，别的行原样留着；读回来就是写进去的设置
-    let d = WowtypeConfig()
-    check(d.serialized(into: nil) == WowtypeConfig.template(), "没有设置文件：写出来的是模板")
-    check(Set(WowtypeConfig.keys).count == WowtypeConfig.keys.count
-          && WowtypeConfig.keys.allSatisfy { d.value(forKey: $0) != nil }, "每个键都有写法")
-    let template = WowtypeConfig.template()
-    check(WowtypeConfig.keys.allSatisfy { template.contains("\n" + $0 + "=") }, "模板里每个键都有")
+    // 设置窗口写回 mytype.conf：只改认识的键，别的行原样留着；读回来就是写进去的设置
+    let d = MyTypeConfig()
+    check(d.serialized(into: nil) == MyTypeConfig.template(), "没有设置文件：写出来的是模板")
+    check(Set(MyTypeConfig.keys).count == MyTypeConfig.keys.count
+          && MyTypeConfig.keys.allSatisfy { d.value(forKey: $0) != nil }, "每个键都有写法")
+    let template = MyTypeConfig.template()
+    check(MyTypeConfig.keys.allSatisfy { template.contains("\n" + $0 + "=") }, "模板里每个键都有")
     // 加了新设置（模板里多了一行）却没加进 keys / setValue / value(forKey:)：设置窗口写不回去
     let templateKeys = template.split(separator: "\n").compactMap { line -> String? in
         guard !line.hasPrefix("#"), let eq = line.firstIndex(of: "=") else { return nil }
         return String(line[..<eq])
     }
-    check(Set(templateKeys) == Set(WowtypeConfig.keys) && templateKeys.allSatisfy { d.value(forKey: $0) != nil },
-          "模板里的键都能写回去", "\(Set(templateKeys).symmetricDifference(WowtypeConfig.keys))")
-    check(d.value(forKey: "CheckUpdate") == nil, "不认识的键没有写法")
+    check(Set(templateKeys) == Set(MyTypeConfig.keys) && templateKeys.allSatisfy { d.value(forKey: $0) != nil },
+          "模板里的键都能写回去", "\(Set(templateKeys).symmetricDifference(MyTypeConfig.keys))")
+    check(d.value(forKey: "NoSuchKey") == nil, "不认识的键没有写法")
 
     // 每一项都改成不是默认值：写出来读回来一样（不管从模板、空文件还是只有注释的文件开始）
-    var all = WowtypeConfig()
-    for key in WowtypeConfig.keys {
+    var all = MyTypeConfig()
+    for key in MyTypeConfig.keys {
         if d.value(forKey: key) == "True" { all.setValue("False", forKey: key) }
         if d.value(forKey: key) == "False" { all.setValue("True", forKey: key) }
     }
@@ -793,10 +793,10 @@ do {
     all.translateLocalModel = "/Users/me/模型/HY-MT.gguf"
     all.translateLlamaServer = "/opt/homebrew/bin/llama-server"
     all.translateIdleMinutes = 30
-    check(WowtypeConfig.keys.allSatisfy { all.value(forKey: $0) != d.value(forKey: $0) }, "每一项都改了")
+    check(MyTypeConfig.keys.allSatisfy { all.value(forKey: $0) != d.value(forKey: $0) }, "每一项都改了")
     for (name, base) in [("模板", nil), ("空文件", ""), ("只有注释", "# 我的设置\n")] as [(String, String?)] {
         let out = all.serialized(into: base)
-        check(WowtypeConfig.parse(out) == all, "每一项改过的设置写进\(name)再读回来一样", out)
+        check(MyTypeConfig.parse(out) == all, "每一项改过的设置写进\(name)再读回来一样", out)
         check(all.serialized(into: out) == out, "再写一次不变（\(name)）")
     }
     check(all.serialized(into: "# 我的设置\n").hasPrefix("# 我的设置\nCandidateLayout=Vertical\nArrowKeys=Caret\nPageSize=4\n"),
@@ -804,7 +804,7 @@ do {
     check(all.serialized(into: nil).contains("Lexicon=\"/Users/me/词库 \\\"新\\\"\\\\v2.tsv\""),
           "带空格、引号的值加引号转义", all.serialized(into: nil))
 
-    // Linux 拷过来的文件：注释、不认识的键、[分组]、大小写、引号、空格都在
+    // 旧版拷过来的文件：注释、不认识的键、[分组]、大小写、引号、空格都在
     let linux = """
     # 自己写的注释
     CandidateLayout=horizontal
@@ -821,7 +821,7 @@ do {
     PageSize=4
 
     """
-    let parsed = WowtypeConfig.parse(linux)
+    let parsed = MyTypeConfig.parse(linux)
     check(parsed.serialized(into: linux) == linux, "设置没改：文件一个字都不动")
 
     var changed = parsed
@@ -831,7 +831,7 @@ do {
     changed.fuzzyNL = true
     changed.traditional = true
     let out = changed.serialized(into: linux)
-    check(WowtypeConfig.parse(out) == changed, "改过的设置读回来一样", out)
+    check(MyTypeConfig.parse(out) == changed, "改过的设置读回来一样", out)
     check(out.contains("\nPageSize=5\n") && out.contains("\n  TypoCorrection = True\n")
           && out.contains("\nTraditional=True\n"), "改的行只换值，前面的空格留着", out)
     check(out.contains("CandidateLayout=horizontal\n") && out.contains("Lexicon=\"~/dicts/my lexicon.tsv\"\n")
@@ -844,12 +844,12 @@ do {
     var back = changed
     back.traditional = false
     let unparsable = back.serialized(into: linux)
-    check(unparsable.contains("\nTraditional=maybe\n") && WowtypeConfig.parse(unparsable) == back,
+    check(unparsable.contains("\nTraditional=maybe\n") && MyTypeConfig.parse(unparsable) == back,
           "认不出的值：要的是默认值就不动", unparsable)
 
     // 同一个键写了两次：都改；Windows 换行留着
     let twice = "PageSize=5\r\nFuzzy=False\r\nPageSize=7\r\n"
-    var three = WowtypeConfig.parse(twice)
+    var three = MyTypeConfig.parse(twice)
     three.pageSize = 3
     three.traditional = true
     check(three.serialized(into: twice) == "PageSize=3\r\nFuzzy=False\r\nPageSize=3\r\nTraditional=True\r\n",
@@ -857,19 +857,19 @@ do {
 
     // 窗口开着时文件在别处改了：窗口只写自己改的键
     let opened = "PageSize=7\nFuzzy=False\nVoice=True\n"
-    let base = WowtypeConfig.parse(opened)
+    let base = MyTypeConfig.parse(opened)
     var window = base
     window.pageSize = 4
     let edited = "PageSize=7\nFuzzy=True\nVoice=True\nTraditional=True\n"
     let merged = window.merged(changesFrom: base, into: edited)
-    let mergedConfig = WowtypeConfig.parse(merged)
+    let mergedConfig = MyTypeConfig.parse(merged)
     check(merged == "PageSize=4\nFuzzy=True\nVoice=True\nTraditional=True\n", "合并：别处改的留着，窗口改的写上", merged)
     check(mergedConfig.pageSize == 4 && mergedConfig.fuzzy && mergedConfig.traditional, "合并后读回来")
     check(window.merged(changesFrom: base, into: nil) == window.serialized(into: nil), "文件被删了：从模板写")
 }
 
 do {
-    // custom.tsv：没动的行原样写回去，加词、删词、导入照 Linux 设置界面的规则
+    // custom.tsv：没动的行原样写回去，加词、删词、导入照设置窗口的规则
     let text = "# 我的常用语\r\nni hao\t你好呀\t100\nmail\thello@example.com\n\n坏行\nzhang san\t \nbjdx\t北京大学\n"
     var words = CustomWords(text: text)
     check(words.entries == [.init(code: "ni hao", word: "你好呀"), .init(code: "mail", word: "hello@example.com"),
@@ -932,7 +932,7 @@ do {
 
 do {
     // custom.tsv：自定义词排第一，简拼、非拼音编码也行；文件删掉就清空
-    let path = "/tmp/wowtype-macos-harness-\(getpid()).custom.tsv"
+    let path = "/tmp/mytype-macos-harness-\(getpid()).custom.tsv"
     writeFile(path, "# 注释\nni hao\t你好呀\nmail\thello@example.com\n")
     check(engine.loadCustomWords(path) == 2, "载入 2 条自定义词")
     let (c, client) = fresh()
@@ -975,19 +975,19 @@ do {
 // MARK: v + 空格的工具栏、表情面板
 
 do {
-    // 默认值、快捷键的键名（和 fcitx5 一样）
-    let d = WowtypeConfig()
+    // 默认值、快捷键的键名（和以前一样）
+    let d = MyTypeConfig()
     check(d.toolbar && !d.clipboardHistory && d.emojiKey == .emojiDefault && d.emojiKey?.name == "Control+period",
           "默认工具栏开、剪贴板历史关、表情面板快捷键 Control+period", d.emojiKey?.name ?? "nil")
-    check(WowtypeConfig.parse("EmojiKey=Super+period").emojiKey == .emojiDefault,
-          "Linux 的默认值 Super+period 拷过来是 Control+.")
-    check(WowtypeConfig.parse("EmojiKey=").emojiKey == nil, "EmojiKey 留空：不用快捷键")
-    check(WowtypeConfig.parse("EmojiKey=Hyper+F12").emojiKey == .emojiDefault, "认不出的快捷键保持默认")
-    let e = WowtypeConfig.parse("Toolbar=False\nClipboardHistory=True\nEmojiKey=Control+Shift+E")
+    check(MyTypeConfig.parse("EmojiKey=Super+period").emojiKey == .emojiDefault,
+          "旧版的默认值 Super+period 拷过来是 Control+.")
+    check(MyTypeConfig.parse("EmojiKey=").emojiKey == nil, "EmojiKey 留空：不用快捷键")
+    check(MyTypeConfig.parse("EmojiKey=Hyper+F12").emojiKey == .emojiDefault, "认不出的快捷键保持默认")
+    let e = MyTypeConfig.parse("Toolbar=False\nClipboardHistory=True\nEmojiKey=Control+Shift+E")
     check(!e.toolbar && e.clipboardHistory, "Toolbar、ClipboardHistory")
     check(e.emojiKey?.matches(.char("E", [.control, .shift])) == true, "Control+Shift+E：按下时 macOS 给大写也认")
     check(e.emojiKey?.name == "Control+Shift+E" && Shortcut(name: "Control+Shift+e")?.name == "Control+Shift+E"
-          && Shortcut(name: "Control+e")?.name == "Control+e", "按着 Shift 的字母写回时是大写（和 fcitx5、设置里的预设一样）")
+          && Shortcut(name: "Control+e")?.name == "Control+e", "按着 Shift 的字母写回时是大写（和设置里的预设一样）")
     check(e.emojiKey?.matches(.char("e", [.control])) == false, "少了 Shift 不算")
     check(Shortcut(name: "Alt+semicolon")?.matches(.char(";", [.option])) == true, "Alt 是 Option，键名 semicolon")
     check(Shortcut(name: "Control+.")?.matches(.char(".", [.control, .caps])) == true, "键名可以是字符本身，CapsLock 不算")
@@ -1053,7 +1053,7 @@ withConfig({ $0.inputScheme = .shuangpin }) { c, _ in
 
 do {
     // 常用语：custom.tsv 的顺序，「编码　词」，选了上屏（\n 是换行）
-    let path = "/tmp/wowtype-macos-harness-\(getpid()).phrases.tsv"
+    let path = "/tmp/mytype-macos-harness-\(getpid()).phrases.tsv"
     writeFile(path, "dz\t北京市海淀区\nqm\t张三\\n13800000000\n")
     engine.loadCustomWords(path)
     let (c, client) = fresh()
@@ -1138,7 +1138,7 @@ withConfig({ _ in }) { c, client in
 }
 
 withConfig({ _ in }) { c, client in
-    let path = "/tmp/wowtype-macos-harness-\(getpid()).emoji-recent.txt"
+    let path = "/tmp/mytype-macos-harness-\(getpid()).emoji-recent.txt"
     unlink(path)
     let recent = RecentEmoji(path: path)
     c.recentEmoji = recent
@@ -1337,8 +1337,8 @@ struct TranslateRig {
 }
 
 /// 打开互译、切到「译」的输入框。
-func translateRig(_ change: (inout WowtypeConfig) -> Void = { _ in }) -> TranslateRig {
-    var config = WowtypeConfig()
+func translateRig(_ change: (inout MyTypeConfig) -> Void = { _ in }) -> TranslateRig {
+    var config = MyTypeConfig()
     config.translate = true
     change(&config)
     let (c, client) = fresh()
@@ -1354,29 +1354,29 @@ func translateRig(_ change: (inout WowtypeConfig) -> Void = { _ in }) -> Transla
 }
 
 do {
-    // 设置：键名、默认值和 Linux 一样
-    let d = WowtypeConfig()
+    // 设置：键名、默认值和以前一样
+    let d = MyTypeConfig()
     check(!d.translate && d.translateTarget == "en" && d.translateBaseUrl.isEmpty && d.translateModel.isEmpty
           && !d.translateFormal && d.translateLocal && d.translateLocalModel.isEmpty
           && d.translateLlamaServer.isEmpty && d.translateIdleMinutes == 5,
           "互译默认关、译成英文、默认用本地模型")
-    // 0.3.10 及以前的文件没有 TranslateLocal：填了翻译接口的接着用接口（三端一样，见 spec/config.json）
+    // 0.3.10 及以前的文件没有 TranslateLocal：填了翻译接口的接着用接口（见 spec/config.json，见 spec/config.json）
     let old = "Translate=True\nTranslateBaseUrl=https://api.deepseek.com/v1\nTranslateModel=deepseek-chat\n"
-    check(!WowtypeConfig.parse(old).translateLocal, "旧文件填了接口、没写 TranslateLocal：用接口")
-    check(WowtypeConfig.parse("Translate=True\nTranslateBaseUrl=\n").translateLocal, "没填接口：用本地模型")
-    check(WowtypeConfig.parse(old + "TranslateLocal=True\n").translateLocal, "写了 TranslateLocal 就照写的")
-    check(WowtypeConfig.parse(old).serialized(into: old) == old, "旧文件读进来没改：一个字都不动")
-    var keepLocal = WowtypeConfig.parse("Translate=True\n")
+    check(!MyTypeConfig.parse(old).translateLocal, "旧文件填了接口、没写 TranslateLocal：用接口")
+    check(MyTypeConfig.parse("Translate=True\nTranslateBaseUrl=\n").translateLocal, "没填接口：用本地模型")
+    check(MyTypeConfig.parse(old + "TranslateLocal=True\n").translateLocal, "写了 TranslateLocal 就照写的")
+    check(MyTypeConfig.parse(old).serialized(into: old) == old, "旧文件读进来没改：一个字都不动")
+    var keepLocal = MyTypeConfig.parse("Translate=True\n")
     keepLocal.translateBaseUrl = "https://api.example.com/v1"
     let keepLocalText = keepLocal.serialized(into: "Translate=True\n")
-    check(keepLocalText.contains("\nTranslateLocal=True\n") && WowtypeConfig.parse(keepLocalText).translateLocal,
+    check(keepLocalText.contains("\nTranslateLocal=True\n") && MyTypeConfig.parse(keepLocalText).translateLocal,
           "填了接口又要用本地模型：TranslateLocal=True 要写进文件，不然读回来成了 False", keepLocalText)
-    var useService = WowtypeConfig.parse(old)
+    var useService = MyTypeConfig.parse(old)
     useService.translateBaseUrl = ""
     let useServiceText = useService.serialized(into: old)
-    check(useServiceText.contains("\nTranslateLocal=False\n") && !WowtypeConfig.parse(useServiceText).translateLocal,
+    check(useServiceText.contains("\nTranslateLocal=False\n") && !MyTypeConfig.parse(useServiceText).translateLocal,
           "清空接口但还选着服务：TranslateLocal=False 要写进文件", useServiceText)
-    let c = WowtypeConfig.parse("""
+    let c = MyTypeConfig.parse("""
     Translate=True
     TranslateTarget=ja
     TranslateBaseUrl=https://api.example.com/v1
@@ -1392,8 +1392,8 @@ do {
     check(c.translateLocal && c.translateLocalModel == "~/models/hy.gguf"
           && c.translateLlamaServer == "/opt/homebrew/bin/llama-server" && c.translateIdleMinutes == 240,
           "本地模型的各项；闲置分钟数超出 0–240 取 240", "\(c.translateIdleMinutes)")
-    check(WowtypeConfig.parse("TranslateTarget=klingon").translateTarget == "en", "不认识的语言保持 en")
-    check(WowtypeConfig.template().contains("TranslateBaseUrl=") && !WowtypeConfig.template().contains("TranslateKey="),
+    check(MyTypeConfig.parse("TranslateTarget=klingon").translateTarget == "en", "不认识的语言保持 en")
+    check(MyTypeConfig.template().contains("TranslateBaseUrl=") && !MyTypeConfig.template().contains("TranslateKey="),
           "设置模板里有互译的项，没有 Key")
 }
 
@@ -1430,10 +1430,10 @@ do {
 }
 
 do {
-    // 另设的切换键（#143），和 Linux 一样
-    check(WowtypeConfig().toggleKey == nil, "默认不用另设的切换键")
-    check(WowtypeConfig.parse("ToggleKey=Control+space").toggleKey?.name == "Control+space", "读出切换键")
-    check(WowtypeConfig.parse("ToggleKey=Hyper+F12").toggleKey == nil, "认不出的键保持不用")
+    // 另设的切换键（#143），和以前一样
+    check(MyTypeConfig().toggleKey == nil, "默认不用另设的切换键")
+    check(MyTypeConfig.parse("ToggleKey=Control+space").toggleKey?.name == "Control+space", "读出切换键")
+    check(MyTypeConfig.parse("ToggleKey=Hyper+F12").toggleKey == nil, "认不出的键保持不用")
 
     let r = translateRig { $0.toggleKey = Shortcut(name: "Control+space") }
     check(r.c.handle(.char(" ", [.control])) && r.c.mode == .chinese, "在「译」里按切换键回中文")
@@ -1454,7 +1454,7 @@ withConfig({ _ in }) { c, _ in
 withConfig({ $0.shiftToggle = .off; $0.toggleKey = Shortcut(name: "Control+space") }) { c, _ in
     // #87 的用法：Shift 没用、关掉，靠另设的键切换。换设置时不该被拉回中文
     check(c.handle(.char(" ", [.control])) && c.mode == .english, "关了 Shift 也能用切换键切到英文")
-    var again = WowtypeConfig()
+    var again = MyTypeConfig()
     again.shiftToggle = .off
     again.toggleKey = Shortcut(name: "Control+space")
     c.apply(again)
@@ -1465,11 +1465,11 @@ withConfig({ $0.shiftToggle = .off; $0.toggleKey = Shortcut(name: "Control+space
 }
 
 do {
-    // 进出「译」的快捷键（#87），和 Linux 一样
-    check(WowtypeConfig().translateModeKey == nil, "默认不用互译键")
-    let parsed = WowtypeConfig.parse("TranslateModeKey=Control+Shift+y")
+    // 进出「译」的快捷键（#87），和以前一样
+    check(MyTypeConfig().translateModeKey == nil, "默认不用互译键")
+    let parsed = MyTypeConfig.parse("TranslateModeKey=Control+Shift+y")
     check(parsed.translateModeKey?.name == "Control+Shift+Y", "读出互译键", parsed.translateModeKey?.name ?? "nil")
-    check(!WowtypeConfig.template().contains("TranslateKey"), "模板里不出现 TranslateKey（会当成 API Key）")
+    check(!MyTypeConfig.template().contains("TranslateKey"), "模板里不出现 TranslateKey（会当成 API Key）")
 
     let y = KeyInput.char("Y", [.control, .shift])
     let r = translateRig { $0.translateModeKey = Shortcut(name: "Control+Shift+Y") }
@@ -1511,7 +1511,7 @@ do {
 withConfig({ $0.shiftToggle = .off; $0.translateModeKey = Shortcut(name: "Control+Shift+Y") }) { c, _ in
     // 关了 Shift、只设了互译键：英文回不来，换设置时拉回中文（互译键只进出「译」）
     c.switchMode(to: .english)
-    var again = WowtypeConfig()
+    var again = MyTypeConfig()
     again.shiftToggle = .off
     again.translateModeKey = Shortcut(name: "Control+Shift+Y")
     c.apply(again)
@@ -1676,7 +1676,7 @@ do {
     // 两个输入框共用一个翻译器：清空自己的原文不取消别人的请求
     let r = translateRig()
     let (other, _) = fresh()
-    var config = WowtypeConfig()
+    var config = MyTypeConfig()
     config.translate = true
     other.setTranslator(r.t)
     other.apply(config)
@@ -1697,7 +1697,7 @@ func fileMode(_ path: String) -> Int {
 
 do {
     // API Key 文件：0600，一行；空串删掉；手动建的权限太宽时收紧
-    let path = "/tmp/wowtype-macos-harness-\(getpid()).key"
+    let path = "/tmp/mytype-macos-harness-\(getpid()).key"
     check(TranslateKeyFile.write("  sk-test-123 \n", to: path), "写 Key")
     check(TranslateKeyFile.read(path) == "sk-test-123" && fileMode(path) == 0o600, "Key 文件 0600，去掉空白",
           "\(fileMode(path))")
@@ -1713,7 +1713,7 @@ do {
 do {
     // 核心的翻译器：没填服务时没配好；本地模型看模型文件在不在
     let t = Translator()
-    var config = WowtypeConfig()
+    var config = MyTypeConfig()
     config.translate = true
     config.translateLocal = false
     t.configure(config, keyFile: "", defaultLocalModel: "")
@@ -1723,7 +1723,7 @@ do {
     t.configure(config, keyFile: "", defaultLocalModel: "")
     check(t.isReady, "填了地址和模型：配好了")
     config.translateLocal = true
-    let model = "/tmp/wowtype-macos-harness-\(getpid()).gguf"
+    let model = "/tmp/mytype-macos-harness-\(getpid()).gguf"
     t.configure(config, keyFile: "", defaultLocalModel: model)
     check(!t.isReady, "本地模型文件不在：没配好")
     writeFile(model, "GGUF")
@@ -1837,9 +1837,9 @@ if !haveCurl() {
 } else if let server = FakeTranslateServer() {
     // 走核心的翻译器（curl）连本机的假服务：Key、模型、语言照设置发，译文流式写进编辑区
     signal(SIGPIPE, SIG_IGN)
-    let keyPath = "/tmp/wowtype-macos-harness-\(getpid()).translate.key"
+    let keyPath = "/tmp/mytype-macos-harness-\(getpid()).translate.key"
     TranslateKeyFile.write("sk-test-123", to: keyPath)
-    var config = WowtypeConfig()
+    var config = MyTypeConfig()
     config.translate = true
     config.translateLocal = false
     config.translateBaseUrl = server.baseURL
@@ -1883,7 +1883,7 @@ if !haveCurl() {
     check(false, "起假翻译服务")
 }
 
-// MARK: 本地翻译模型（和 Linux 设置的 download_model / install_llama_server 一样）
+// MARK: 本地翻译模型
 
 do {
     let arm = LocalModel.llamaAsset(machine: "arm64", os: (14, 0))
@@ -1899,17 +1899,6 @@ do {
     check(LocalModel.llamaAsset(machine: "ppc", os: (26, 0)) == nil, "不认识的 CPU 没有")
     check(LocalModel.size == 1_133_080_512 && LocalModel.sha256.count == 64 && LocalModel.url.hasSuffix("/" + LocalModel.fileName),
           "模型钉了大小和 SHA256")
-    // 和 Linux 设置钉的是同一个模型、同一个 llama.cpp 构建（规格目录旁边就是 settings/）
-    let specDir = getenv("WOWTYPE_SPEC_DIR").map { String(cString: $0) } ?? "spec"
-    if let linux = readFile(specDir + "/../settings/wowtype-config") {
-        check(linux.contains("\"\(LocalModel.sha256)\"") && linux.contains("LOCAL_MODEL_SIZE = \(LocalModel.size)")
-              && linux.contains("LOCAL_MODEL_FILE = \"\(LocalModel.fileName)\"")
-              && linux.contains("LLAMA_BUILD = \"\(LocalModel.llamaBuild)\""),
-              "模型的 SHA256、大小和 llama.cpp 构建号和 Linux 的 wowtype-config 一样")
-    } else {
-        print("skip 对照 Linux 的模型校验值（没找到 settings/wowtype-config）")
-    }
-
     // 缺什么下什么
     let all = LocalModel.plan(modelExists: false, serverFound: false, customServer: false, asset: arm)
     check(all.wantModel && all.wantLlama && !all.ready && all.bytes == LocalModel.size + 16_650_691, "都没有：两样一起下",
@@ -1925,12 +1914,12 @@ do {
     check(custom.wantModel && !custom.wantLlama && custom.llamaUnavailable && custom.bytes == LocalModel.size,
           "自己写了 llama-server 的位置：不替它下载", "\(custom)")
 
-    // 和 Linux 设置的 human_size 一样：f"{n / 1e9:.2f} GB" if n >= 1e9 else f"{n / 1e6:.0f} MB"
-    check(LocalModel.sizeText(LocalModel.size + 16_650_691) == "1.15 GB", "大小写成 1.15 GB（和 Linux 一样）",
+    // 和设置窗口的 human_size 一样：f"{n / 1e9:.2f} GB" if n >= 1e9 else f"{n / 1e6:.0f} MB"
+    check(LocalModel.sizeText(LocalModel.size + 16_650_691) == "1.15 GB", "大小写成 1.15 GB（和以前一样）",
           LocalModel.sizeText(LocalModel.size + 16_650_691))
     check(LocalModel.sizeText(16_650_691) == "17 MB" && LocalModel.sizeText(1_950_000_000) == "1.95 GB"
           && LocalModel.sizeText(2_004_000_000) == "2.00 GB" && LocalModel.sizeText(1_133_080_512) == "1.13 GB",
-          "MB 取整、GB 留两位小数（和 Linux 一样）")
+          "MB 取整、GB 留两位小数（和以前一样）")
     check(LocalModel.percent(42, of: 100) == 42 && LocalModel.percent(5, of: 0) == 0 && LocalModel.percent(300, of: 200) == 100,
           "百分比")
 
@@ -1959,7 +1948,7 @@ do {
 // MARK: 语音键
 
 do {
-    let d = WowtypeConfig()
+    let d = MyTypeConfig()
     check(d.voice && d.voiceKey == "Alt_R" && !d.voiceCopy, "语音默认开、右 Option、不复制")
     let option = VoiceKey(name: "Alt_R")
     check(option?.keyCode == 0x3D && option?.isModifier == true, "Alt_R 是右 Option")
@@ -1969,26 +1958,26 @@ do {
     check(VoiceKey(name: "F8")?.keyCode == 0x64 && VoiceKey(name: "F8")?.isModifier == false, "F8 不是修饰键")
     check(VoiceKey(name: "Menu") == nil && VoiceKey(name: "") == nil && VoiceKey(name: "none") == nil,
           "Mac 上没有的键、留空：不用语音键")
-    let c = WowtypeConfig.parse("Voice=False\nVoiceKey=F9\nVoiceCopy=True")
+    let c = MyTypeConfig.parse("Voice=False\nVoiceKey=F9\nVoiceCopy=True")
     check(!c.voice && c.voiceKey == "F9" && c.voiceCopy, "读语音设置")
     check(voiceWave([]) == "▁▁▁▁▁▁" && voiceWave([100, 0]) == "▁▁▁▁█▁"
-          && voiceWave([0, 10, 20, 30, 40, 50, 60]).count == 6, "音量画成 6 个竖条（和 Linux 一样）")
+          && voiceWave([0, 10, 20, 30, 40, 50, 60]).count == 6, "音量画成 6 个竖条（和以前一样）")
 }
 
-// MARK: 万象词库包（规矩和 Linux 设置的 install_lexicon_pack 一样）
+// MARK: 万象词库包（规矩和设置窗口的 install_lexicon_pack 一样）
 
 do {
     check(LexiconPack.assetVersion("wowtype-data-wanxiang-2026.11.12.0.tar.gz") == "2026.11.12.0", "认出万象包和版本")
     check(LexiconPack.assetVersion("wowtype-data-wanxiang-latest.tar.gz") == nil
           && LexiconPack.assetVersion("wowtype-data-wanxiang-1.0.zip") == nil
-          && LexiconPack.assetVersion("wowtype-data-rime-ice-2026.10.31.2.tar.gz") == nil
+          && LexiconPack.assetVersion("mytype-data-rime-ice-2026.10.31.2.tar.gz") == nil
           && LexiconPack.assetVersion("wowtype-data-wanxiang-1.0/../x.tar.gz") == nil, "别的文件不认")
     let pick = LexiconPack.pickAsset(["SHA256SUMS", "wowtype-data-wanxiang-2026.9.1.tar.gz",
                                       "wowtype-data-wanxiang-2026.10.31.2.tar.gz", "wowtype-data-wanxiang-2026.10.31.tar.gz"])
     check(pick?.version == "2026.10.31.2", "好几个包取版本最大的", "\(String(describing: pick))")
-    check(LexiconPack.pickAsset(["SHA256SUMS", "wowtype_0.3.10_debian13_amd64.deb"]) == nil, "没有万象包")
+    check(LexiconPack.pickAsset(["SHA256SUMS", "mytype_0.3.10_debian13_amd64.deb"]) == nil, "没有万象包")
     check(LexiconPack.compareVersions("2026.10.31.2", "2026.10.31") > 0 && LexiconPack.compareVersions("2026.9.1", "2026.10.1") < 0
-          && LexiconPack.compareVersions("1.0", "1") > 0, "版本按数字段比（和 Linux 一样，段多的大）")
+          && LexiconPack.compareVersions("1.0", "1") > 0, "版本按数字段比（和以前一样，段多的大）")
 
     let name = "wowtype-data-wanxiang-1.tar.gz"
     let digest = String(repeating: "ab", count: 32)
@@ -2016,7 +2005,7 @@ do {
     check(LexiconPack.entryName("../lexicon.tsv") == nil && LexiconPack.entryName("/etc/passwd") == nil
           && LexiconPack.entryName("dicts/lexicon.tsv") == nil && LexiconPack.entryName("evil.sh") == nil, "别的条目不认")
 
-    let dir = "/tmp/wowtype-macos-harness-\(getpid())-pack"
+    let dir = "/tmp/mytype-macos-harness-\(getpid())-pack"
     mkdir(dir, 0o755)
     let lexicon = dir + "/lexicon.tsv"
     writeFile(lexicon, "# 注释\n\nni hao\t你好\t100\nzhong guo\t中国\n")
@@ -2038,12 +2027,36 @@ do {
     rmdir(dir)
 }
 
-// MARK: 设置契约（spec/config.json、spec/lexicon-pack.json；Linux 两端在 scripts/test-config-contract.py 对照）
+// MARK: 应用更新（发布页 tag、安装包名；网络在 App/Updater.swift）
+
+do {
+    check(Update.latestPage == "https://github.com/yxxbc/MyType/releases/latest", "更新：发布页地址")
+    check(Update.version(fromTag: "v0.6.0") == "0.6.0", "更新：tag 去掉 v 就是版本")
+    check(Update.version(fromTag: "0.6.0") == "0.6.0", "更新：没有 v 也认")
+    check(Update.version(fromTag: "v0.6.0-rc1") == "0.6.0-rc1", "更新：带后缀的版本也认")
+    check(Update.version(fromTag: "v") == nil && Update.version(fromTag: "v../x") == nil
+          && Update.version(fromTag: "v1/2") == nil && Update.version(fromTag: "v中文") == nil, "更新：不像版本的 tag 不认")
+    check(Update.tag(fromURL: "https://github.com/yxxbc/MyType/releases/tag/v0.6.0") == "v0.6.0", "更新：从 302 的地址取 tag")
+    check(Update.tag(fromURL: "https://github.com/yxxbc/MyType/releases/tag/v0.6.0?x=1#y") == "v0.6.0", "更新：tag 后面的查询串去掉")
+    check(Update.tag(fromURL: "https://github.com/yxxbc/MyType/releases/latest") == nil, "更新：跳到 latest 本身不算")
+    check(Update.tag(fromURL: "https://github.com/yxxbc/MyType/releases") == nil, "更新：没有正式版时不算")
+    check(Update.packageName(version: "0.6.0") == "MyType-0.6.0-macos.pkg", "更新：安装包名")
+    check(Update.packageURL(tag: "v0.6.0", version: "0.6.0")
+          == "https://github.com/yxxbc/MyType/releases/download/v0.6.0/MyType-0.6.0-macos.pkg", "更新：安装包地址")
+    check(Update.checksumsURL(tag: "v0.6.0")
+          == "https://github.com/yxxbc/MyType/releases/download/v0.6.0/SHA256SUMS", "更新：校验和地址")
+    check(Update.isNewer("0.6.1", than: "0.6.0"), "更新：0.6.1 比 0.6.0 新")
+    check(!Update.isNewer("0.6.0", than: "0.6.0"), "更新：一样不算新")
+    check(!Update.isNewer("0.5.9", than: "0.6.0"), "更新：旧的不算新")
+    check(Update.isNewer("0.6.0.1", than: "0.6.0"), "更新：段多的大")
+}
+
+// MARK: 设置契约（spec/config.json、spec/lexicon-pack.json）
 
 checkConfigContract()
 checkLexiconPackContract()
 
-if getenv("WOWTYPE_EXPECT_FULL_CHARS") != nil {
+if getenv("MYTYPE_EXPECT_FULL_CHARS") != nil {
     // 真实词库（补了雾凇大字表）：一个音节的字要列全，yi 有八百多个
     let (c, _) = fresh()
     type(c, "yi")

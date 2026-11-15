@@ -1,4 +1,4 @@
-# wowtype-voice
+# mytype-voice
 
 语音输入的核心逻辑，与平台解耦，可在任何系统上单测。
 
@@ -13,22 +13,22 @@
 | `typer.rs` | 边说边上屏：公共前缀比对 + 退格补偿 |
 | `sink.rs` | 上屏后端（stdout / wtype / ydotool） |
 
-## Linux 上还缺的三块（平台层）
+## 以前还缺的三块（平台层）
 
 1. **全局热键**
    - X11：`XGrabKey` 抢占用单键（如 `Alt_R`），这会把按键从其它程序手里拿走，正是我们要的。
    - Wayland：没有全局热键 API。可行路线：
-     - 首选 fcitx5 内拦截（输入法处于激活态时能收到所有按键，这条与平台无关）；
+     - 首选 内拦截（输入法处于激活态时能收到所有按键，这条与平台无关）；
      - 非输入态用 `keyd`/`kanata` 把组合键映射成调用我们的 CLI；
      - 兜底用 evdev（`/dev/input/event*` + `EVIOCGRAB`，需要 `input` 组权限）。
 2. **麦克风采集**：`cpal`（ALSA/PulseAudio/PipeWire 都走它），产物直接喂 `push_pcm`。
 3. **上屏**
-   - 输入法激活时：走 fcitx5 的 commit，最干净；
+   - 输入法激活时：走  commit，最干净；
    - 非激活时：`wtype`（wlroots）/ `ydotool`（uinput）/ `xdotool`（X11）。
 
-## 与 fcitx5 插件的关系
+## 与 外壳的关系
 
-`fcitx5-addon` 里把语音做成一类输入状态：
+macOS 外壳把语音做成一类输入状态：
 - 收到热键 -> 进入语音模式（预编辑显示"正在听…"）
 - 中间结果 -> 更新预编辑（可选：边说边上屏走 Typer 逻辑）
 - 结束 -> 把最终文本 `commit`

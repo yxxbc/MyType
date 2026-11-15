@@ -1,10 +1,10 @@
 //! 互译：打中文出外文（或反过来），调用户自己配置的大模型（OpenAI 格式 chat/completions）。
 //!
-//! 输入法插件把「要翻译的原文」交给 [`Translator::start`]，之后定时调 [`Translator::poll`]
-//! 取流式结果。请求在后台线程里跑，插件线程上的函数都不阻塞。
+//! 输入法外壳把「要翻译的原文」交给 [`Translator::start`]，之后定时调 [`Translator::poll`]
+//! 取流式结果。请求在后台线程里跑，外壳线程上的函数都不阻塞。
 //!
 //! 网络请求交给系统的 curl（`curl -K -` 从标准输入读配置，API Key 不会出现在命令行里，
-//! `ps` 看不到）。这样不用把 TLS 库编进插件，curl 也会自己读 `https_proxy` 等代理变量、
+//! `ps` 看不到）。这样不用把 TLS 库编进外壳，curl 也会自己读 `https_proxy` 等代理变量、
 //! 用系统的证书。
 //!
 //! 方向由模型判断：原文主要是中文就译成用户选的语言，否则译成简体中文。
@@ -45,7 +45,7 @@ pub const LANGUAGES: &[(&str, &str, &str)] = &[
 /// 缓存多少条原文的结果（来回删改同一句话时不必重新请求）。
 const CACHE_LIMIT: usize = 64;
 
-const HTTP_MARK: &str = "<<<WOWTYPE-HTTP ";
+const HTTP_MARK: &str = "<<<MYTYPE-HTTP ";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TranslateConfig {
@@ -438,7 +438,7 @@ pub struct Snapshot {
     pub error: String,
 }
 
-/// 翻译器。插件线程持有，内部状态和后台线程共享。
+/// 翻译器。外壳线程持有，内部状态和后台线程共享。
 pub struct Translator {
     inner: Arc<Mutex<Inner>>,
     local: Arc<LocalServer>,
@@ -527,9 +527,9 @@ impl Translator {
         if !inner.config.is_ready() {
             inner.job.state = JobState::Error;
             inner.job.error = if inner.config.local.is_some() {
-                "还没下载本地翻译模型（WowType 设置 → 翻译）".to_string()
+                "还没下载本地翻译模型（MyType 设置 → 翻译）".to_string()
             } else {
-                "还没配置翻译服务（WowType 设置 → 翻译）".to_string()
+                "还没配置翻译服务（MyType 设置 → 翻译）".to_string()
             };
             return;
         }
@@ -539,7 +539,7 @@ impl Translator {
         let source = source.to_string();
         drop(inner);
         thread::Builder::new()
-            .name("wowtype-translate".into())
+            .name("mytype-translate".into())
             .spawn(move || run_local_or_remote(shared, local, id, config, source, cache_key))
             .ok();
     }
@@ -678,7 +678,7 @@ fn run_job(
             "--max-time",
             "45",
             "-w",
-            "\n<<<WOWTYPE-HTTP %{http_code}>>>\n",
+            "\n<<<MYTYPE-HTTP %{http_code}>>>\n",
             "-K",
             "-",
         ])
@@ -846,7 +846,7 @@ mod tests {
         {
             return;
         }
-        let dir = std::env::temp_dir().join(format!("wowtype-local-mt-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("mytype-local-mt-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let server = crate::llama::test_support::fake_server(&dir);
         let model = dir.join("model.gguf");
@@ -1162,7 +1162,7 @@ mod tests {
         ];
         let base = mock_server(chunks, "200 OK", Arc::clone(&seen));
         let dir =
-            std::env::temp_dir().join(format!("wowtype-translate-test-{}", std::process::id()));
+            std::env::temp_dir().join(format!("mytype-translate-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let key_file = dir.join("key");
         std::fs::write(&key_file, "sk-test-123\n").unwrap();

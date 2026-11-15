@@ -65,7 +65,7 @@ fn cache_paths(path: &Path) -> Vec<std::path::PathBuf> {
             hash ^= u64::from(*byte);
             hash = hash.wrapping_mul(0x1000_0000_01b3);
         }
-        out.push(base.join("wowtype").join(format!("{hash:016x}.wcache")));
+        out.push(base.join("mytype").join(format!("{hash:016x}.wcache")));
     }
     out
 }
@@ -731,7 +731,7 @@ impl MemoryLexicon {
             return;
         }
         let placeholder = f64::from_bits(bits);
-        let bonus = std::env::var("WOWTYPE_PLACEHOLDER_BONUS")
+        let bonus = std::env::var("MYTYPE_PLACEHOLDER_BONUS")
             .ok()
             .and_then(|v| v.parse::<f64>().ok())
             .unwrap_or(PLACEHOLDER_BONUS);
@@ -2190,7 +2190,7 @@ mod tests {
 
     fn temp_lexicon(tag: &str, body: &str) -> std::path::PathBuf {
         let path =
-            std::env::temp_dir().join(format!("wowtype_lex_{}_{}.tsv", tag, std::process::id()));
+            std::env::temp_dir().join(format!("mytype_lex_{}_{}.tsv", tag, std::process::id()));
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(cache_path(&path));
         std::fs::write(&path, body).expect("写临时词库失败");

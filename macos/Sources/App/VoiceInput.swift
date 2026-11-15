@@ -1,15 +1,15 @@
-// 语音输入（和 Linux 插件的 handleVoiceKey / pollVoice 一样）：
+// 语音输入（核心的 mytype_voice_*）：
 // 按下语音键开始听，按住超过 300ms 松开即结束；更短算点按，继续听到静音 1.5 秒或再按一次。
 // 正在听时编辑区里是识别到一半的字，候选框里是麦克风和跟着音量动的波形；出结果就上屏。
 // 说话途中按 Esc 取消；按别的键也不要这次的语音，键照常处理。正在打拼音时不抢语音键。
 //
-// 识别在核心里（wowtype_voice_*，开麦克风、读模型、解码都在后台线程），这里每 50 毫秒取一次状态。
+// 识别在核心里（mytype_voice_*，开麦克风、读模型、解码都在后台线程），这里每 50 毫秒取一次状态。
 // 模型在设置窗口的「语音」页下载到数据目录的 wtlocal/（VoiceModelInstaller）。
 
 import AppKit
 import AVFoundation
 import Carbon
-import CWowtype
+import CMyType
 
 /// 语音输入要在哪个输入框里显示、上屏（MyTypeInputController 实现）。
 protocol VoiceHost: AnyObject {
@@ -41,7 +41,7 @@ final class VoiceInput {
     private var holdUntil: TimeInterval = 0
 
     /// 照设置配语音键；第一次要用时才建核心的语音对象（不碰麦克风、不读模型，按键时才读）。
-    func configure(_ config: WowtypeConfig, modelDir: String) {
+    func configure(_ config: MyTypeConfig, modelDir: String) {
         let wanted = config.voice ? VoiceKey(name: config.voiceKey) : nil
         if wanted != key {
             if showing { cancel() }
@@ -51,7 +51,7 @@ final class VoiceInput {
         copyResult = config.voiceCopy
         self.modelDir = modelDir
         if key != nil && handle == nil {
-            handle = wowtype_voice_new(modelDir)
+            handle = mytype_voice_new(modelDir)
         }
     }
 
@@ -88,7 +88,7 @@ final class VoiceInput {
     }
 
     func cancel() {
-        if let handle { wowtype_voice_cancel(handle) }
+        if let handle { mytype_voice_cancel(handle) }
         finish()
     }
 
@@ -109,8 +109,8 @@ final class VoiceInput {
             self.host = host
             showing = true
             holdUntil = 0
-            wowtype_voice_key_down(handle)
-            wowtype_voice_key_up(handle)
+            mytype_voice_key_down(handle)
+            mytype_voice_key_up(handle)
             poll()
             startTimer()
             return true
@@ -119,7 +119,7 @@ final class VoiceInput {
             guard keyDown else { return false }
             keyDown = false
             if showing && self.host === host {
-                wowtype_voice_key_up(handle)
+                mytype_voice_key_up(handle)
                 poll()
             }
             return true
@@ -147,7 +147,7 @@ final class VoiceInput {
             frame = 0
             holdUntil = 0
         }
-        wowtype_voice_key_down(handle)
+        mytype_voice_key_down(handle)
         poll()
         startTimer()
         return true
@@ -185,21 +185,21 @@ final class VoiceInput {
             cancel()
             return false
         }
-        let phase = Int(wowtype_voice_poll(handle))
-        let text = wowtype_voice_text(handle).map { String(cString: $0) } ?? ""
+        let phase = Int(mytype_voice_poll(handle))
+        let text = mytype_voice_text(handle).map { String(cString: $0) } ?? ""
         let now = ProcessInfo.processInfo.systemUptime
         switch phase {
-        case Int(WOWTYPE_VOICE_LISTENING):
-            levels.append(Int(wowtype_voice_level(handle)))
+        case Int(MYTYPE_VOICE_LISTENING):
+            levels.append(Int(mytype_voice_level(handle)))
             if levels.count > 6 { levels.removeFirst() }
             host.voiceShow(status: "🎙 " + voiceWave(levels), partial: text)
             return true
-        case Int(WOWTYPE_VOICE_RECOGNIZING):
+        case Int(MYTYPE_VOICE_RECOGNIZING):
             let dots = ["·    ", "··   ", "···  ", "···· ", "·····"]
             host.voiceShow(status: "🎙 " + dots[(frame / 3) % dots.count], partial: text)
             frame += 1
             return true
-        case Int(WOWTYPE_VOICE_RESULT):
+        case Int(MYTYPE_VOICE_RESULT):
             finish()
             host.voiceCommit(text)
             // 上屏以后再复制；密码框里（开了安全输入）说的话不进剪贴板
@@ -208,11 +208,11 @@ final class VoiceInput {
                 NSPasteboard.general.setString(text, forType: .string)
             }
             return false
-        case Int(WOWTYPE_VOICE_ERROR):
+        case Int(MYTYPE_VOICE_ERROR):
             NSLog("MyType: 语音 %@", text)
             host.voiceShow(status: "🎙 " + text, partial: "")
             // 没下载模型的提示要去设置里操作，多留一会儿
-            let missing = Int(wowtype_voice_model_state(handle)) == Int(WOWTYPE_VOICE_MODEL_MISSING)
+            let missing = Int(mytype_voice_model_state(handle)) == Int(MYTYPE_VOICE_MODEL_MISSING)
             holdUntil = now + (missing ? 4 : 1.5)
             return true
         default:

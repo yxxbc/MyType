@@ -16,7 +16,7 @@
 维基百科的文本是 CC BY-SA 4.0，抽出的用例只在本地评测用，不提交。
 
 --context 改成逐词的用例：把每句切成词，第 2 个词起每个词一条「拼音<TAB>词<TAB>前面的文字」，
-测接着前文打的时候排序对不对（wowtype-eval 的第三列）。切词要 jieba：
+测接着前文打的时候排序对不对（mytype-eval 的第三列）。切词要 jieba：
 
     python3 tools/make_sentence_eval.py --text tools/eval/daily_sentences.txt --context > tools/eval/context.tsv
 """

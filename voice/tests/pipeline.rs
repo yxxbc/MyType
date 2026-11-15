@@ -5,9 +5,9 @@
 
 use std::sync::{Arc, Mutex};
 
-use wowtype_voice::asr::{AsrChannel, ProcessChannel};
-use wowtype_voice::sink::TextSink;
-use wowtype_voice::{read_wav, vad::Vad, write_wav, Typer};
+use mytype_voice::asr::{AsrChannel, ProcessChannel};
+use mytype_voice::sink::TextSink;
+use mytype_voice::{read_wav, vad::Vad, write_wav, Typer};
 
 const FRAME: usize = 160; // 16kHz 下 10ms
 
@@ -61,7 +61,7 @@ fn vad_separates_speech_from_silence() {
 
 #[test]
 fn wav_roundtrip_preserves_samples() {
-    let path = std::env::temp_dir().join(format!("wowtype_rt_{}.wav", std::process::id()));
+    let path = std::env::temp_dir().join(format!("mytype_rt_{}.wav", std::process::id()));
     let samples = tone(10, 4000);
     write_wav(&path, &samples).expect("写 WAV 失败");
     let (rate, channels, back) = read_wav(&path).expect("读 WAV 失败");

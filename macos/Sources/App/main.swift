@@ -9,7 +9,7 @@
 //   … --version
 
 import AppKit
-import CWowtype
+import CMyType
 import InputMethodKit
 
 /// 自检里用的假输入框。
@@ -36,9 +36,9 @@ func selfTest() -> Bool {
     }
     print(String(format: "词库载入 %.1f 秒", Date().timeIntervalSince(start)))
     let config = AppState.shared.config
-    print("设置 \(AppState.shared.configPath)：\(config == WowtypeConfig() ? "默认" : "改过")，输入方案 \(config.inputScheme.rawValue)\(config.shuangpin ? "（\(config.shuangpinScheme)）" : "")")
+    print("设置 \(AppState.shared.configPath)：\(config == MyTypeConfig() ? "默认" : "改过")，输入方案 \(config.inputScheme.rawValue)\(config.shuangpin ? "（\(config.shuangpinScheme)）" : "")")
     // 下面照默认设置打一句（设置里开了双拼 nihao 就不是你好了）
-    engine.apply(WowtypeConfig())
+    engine.apply(MyTypeConfig())
     let client = SelfTestClient()
     let composer = Composer(engine: engine, client: client)
     for c in "nihao" {
@@ -49,7 +49,7 @@ func selfTest() -> Bool {
     print("nihao → 第一个候选「\(first)」，上屏「\(client.committed)」")
     guard client.committed == "你好" else { return false }
     // 安装包里的五笔码表：wqvb 空格上屏「你好」
-    var wubi = WowtypeConfig()
+    var wubi = MyTypeConfig()
     wubi.inputScheme = .wubi86
     for problem in engine.apply(wubi, wubi: AppState.shared.resource("wubi86.tsv")) {
         print("FAIL \(problem)")
@@ -64,8 +64,8 @@ func selfTest() -> Bool {
     return wubiClient.committed == "你好"
 }
 
-/// 和 Linux 的 wowtype-config 一样：--install-lexicon wanxiang|<文件.tar.gz> 下载 / 装上万象并切过去，
-/// --use-lexicon rime-ice|wanxiang 切换。改的是 wowtype.conf 的 Lexicon，输入法下一次按键时换词库。
+/// 和 旧版的 mytype-config 一样：--install-lexicon wanxiang|<文件.tar.gz> 下载 / 装上万象并切过去，
+/// --use-lexicon rime-ice|wanxiang 切换。改的是 mytype.conf 的 Lexicon，输入法下一次按键时换词库。
 func lexiconCommand(_ args: [String]) -> Bool {
     let state = AppState.shared
     let wanxiang = LexiconPackInstaller.lexicon(in: state.supportDir)
@@ -111,14 +111,14 @@ func lexiconCommand(_ args: [String]) -> Bool {
     do {
         try state.setLexicon(lexicon)
     } catch {
-        print("wowtype.conf 写不进去：\(error.localizedDescription)")
+        print("mytype.conf 写不进去：\(error.localizedDescription)")
         return false
     }
     print("已切到" + (lexicon.isEmpty ? "雾凇拼音（默认）" : "万象拼音") + "，输入法下一次按键时换词库（载入要几秒）")
     return true
 }
 
-/// 和 Linux 的 wowtype-config --download-model 一样：先同意许可（--accept-license 跳过确认），下载本地翻译模型，
+/// 和 旧版的 mytype-config --download-model 一样：先同意许可（--accept-license 跳过确认），下载本地翻译模型，
 /// 找不到 llama-server 时顺带下载 llama.cpp 官方的。断了再跑一次接着下。
 func downloadModelCommand(accepted: Bool) -> Bool {
     print(LocalModel.terms)
@@ -134,7 +134,7 @@ func downloadModelCommand(accepted: Bool) -> Bool {
         else { return false }
     }
     let state = AppState.shared
-    let config = WowtypeConfig.load(path: state.configPath)
+    let config = MyTypeConfig.load(path: state.configPath)
     let model = config.translateLocalModel.isEmpty
         ? state.localModelPath : (config.translateLocalModel as NSString).expandingTildeInPath
     let plan = LocalModelInstaller.plan(model: model, customServer: config.translateLlamaServer,
@@ -172,11 +172,11 @@ func downloadModelCommand(accepted: Bool) -> Bool {
     return true
 }
 
-/// 和 Linux 的 wowtype-config 一样：--install-voice-model [语音包.apk] 下载（或从文件）装上语音模型并打开语音输入，
+/// 和 旧版的 mytype-config 一样：--install-voice-model [语音包.apk] 下载（或从文件）装上语音模型并打开语音输入，
 /// --remove-voice-model 删掉模型并关掉语音输入。
 func voiceModelCommand(_ args: [String]) -> Bool {
     let state = AppState.shared
-    var values = WowtypeConfig.parse(readText(state.configPath) ?? "")
+    var values = MyTypeConfig.parse(readText(state.configPath) ?? "")
     let base = values
     if args[0] == "--remove-voice-model" {
         let freed = VoiceModelInstaller.remove(supportDir: state.supportDir)
@@ -206,7 +206,7 @@ func voiceModelCommand(_ args: [String]) -> Bool {
     do {
         try writeText(values.merged(changesFrom: base, into: readText(state.configPath)), to: state.configPath)
     } catch {
-        print("wowtype.conf 写不进去：\(error.localizedDescription)")
+        print("mytype.conf 写不进去：\(error.localizedDescription)")
         return false
     }
     print(values.voice ? "语音输入已打开：按住\(values.voiceKey == "Alt_R" ? "右 Option" : values.voiceKey) 说话"
@@ -220,24 +220,24 @@ func voiceTest(_ wav: String) -> Bool {
         print("用法：MyType --voice-test 说的话.wav")
         return false
     }
-    setenv("WOWTYPE_VOICE_WAV", wav, 1)
-    guard let voice = wowtype_voice_new(AppState.shared.voiceModelDir) else {
+    setenv("MYTYPE_VOICE_WAV", wav, 1)
+    guard let voice = mytype_voice_new(AppState.shared.voiceModelDir) else {
         print("核心没带语音")
         return false
     }
-    defer { wowtype_voice_free(voice) }
-    wowtype_voice_key_down(voice)
+    defer { mytype_voice_free(voice) }
+    mytype_voice_key_down(voice)
     usleep(400_000)
-    wowtype_voice_key_up(voice)
+    mytype_voice_key_up(voice)
     let start = Date()
     while Date().timeIntervalSince(start) < 60 {
-        let phase = Int(wowtype_voice_poll(voice))
-        let text = wowtype_voice_text(voice).map { String(cString: $0) } ?? ""
-        if phase == Int(WOWTYPE_VOICE_RESULT) {
+        let phase = Int(mytype_voice_poll(voice))
+        let text = mytype_voice_text(voice).map { String(cString: $0) } ?? ""
+        if phase == Int(MYTYPE_VOICE_RESULT) {
             print("识别结果：\(text)（\(String(format: "%.1f", Date().timeIntervalSince(start))) 秒）")
             return !text.isEmpty
         }
-        if phase == Int(WOWTYPE_VOICE_ERROR) {
+        if phase == Int(MYTYPE_VOICE_ERROR) {
             print("出错：\(text)")
             return false
         }
@@ -293,8 +293,8 @@ terminationSource.setEventHandler {
 terminationSource.resume()
 
 // 核心的接口主版本要和编译时的头文件一样（docs/ABI.md）：静态链接时一定对得上，改成动态库以后装错了版本就别跑
-if Int(wowtype_abi_version()) / 1000 != Int(WOWTYPE_ABI_VERSION_MAJOR) {
-    NSLog("MyType: 核心接口版本 %d 和编译时的主版本 %d 对不上", wowtype_abi_version(), WOWTYPE_ABI_VERSION_MAJOR)
+if Int(mytype_abi_version()) / 1000 != Int(MYTYPE_ABI_VERSION_MAJOR) {
+    NSLog("MyType: 核心接口版本 %d 和编译时的主版本 %d 对不上", mytype_abi_version(), MYTYPE_ABI_VERSION_MAJOR)
     exit(1)
 }
 
@@ -310,6 +310,8 @@ let delegate = AppDelegate()
 app.delegate = delegate
 app.setActivationPolicy(.accessory)
 AppState.shared.loadEngineInBackground()
+// 发布页有新版时在输入法菜单和设置「关于」页提示（最多一天查一次，不碰 GitHub API）
+Updater.shared.checkAutomatically(current: appVersion)
 withExtendedLifetime(server) {
     app.run()
 }

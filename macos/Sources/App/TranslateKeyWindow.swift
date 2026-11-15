@@ -1,5 +1,5 @@
 // 菜单「设置互译 API Key…」：一个小窗口，密码框里填 Key，存到数据目录的 translate.key（0600）。
-// Key 不写进 wowtype.conf（那个文件谁都能读），也不进日志。
+// Key 不写进 mytype.conf（那个文件谁都能读），也不进日志。
 //
 // 不用 NSAlert.runModal：模态循环里输入法可能收不到别的应用的按键，窗口开着时别处打字会卡住。
 // 密码框里系统开着安全输入、只用英文键盘，不会再进到 MyType 自己。
@@ -38,8 +38,8 @@ final class TranslateKeyWindow: NSObject, NSWindowDelegate {
 
         let path = (AppState.shared.translateKeyPath as NSString).abbreviatingWithTildeInPath
         let note = NSTextField(wrappingLabelWithString:
-            "翻译服务（wowtype.conf 里的 TranslateBaseUrl）的 API Key。存在 \(path)，只有你自己能读，"
-            + "不写进 wowtype.conf。本机的服务（Ollama 等）、本地模型不用填。留空保存就删掉。")
+            "翻译服务（mytype.conf 里的 TranslateBaseUrl）的 API Key。存在 \(path)，只有你自己能读，"
+            + "不写进 mytype.conf。本机的服务（Ollama 等）、本地模型不用填。留空保存就删掉。")
         note.frame = NSRect(x: 20, y: 110, width: width - 40, height: 66)
         note.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
         content.addSubview(note)

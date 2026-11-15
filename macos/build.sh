@@ -8,7 +8,7 @@
 # 产物：<输出目录>/MyType.app、MyType-<版本>-macos.pkg（给普通用户双击安装）和 MyType-<版本>-macos.zip
 # （给 macos/install.sh 用）。arm64 + x86_64 通用，ad-hoc 签名，没有 Apple 开发者签名和公证。
 #
-# 环境变量：WOWTYPE_VERSION（默认取 core/Cargo.toml），WOWTYPE_MACOS_ARCHS（默认 "arm64 x86_64"）。
+# 环境变量：MYTYPE_VERSION（默认取 core/Cargo.toml），MYTYPE_MACOS_ARCHS（默认 "arm64 x86_64"）。
 # 核心带语音（默认特性）：识别模型是微信输入法的，不随安装包分发，在设置窗口「语音」页从官方 CDN 下载。
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -16,8 +16,8 @@ cd "$(dirname "$0")/.."
 [[ "$(uname)" == Darwin ]] || { echo "只能在 macOS 上打包" >&2; exit 1; }
 DATA=${1:?用法：macos/build.sh <数据目录> [输出目录]}
 OUT=${2:-dist/macos}
-VERSION=${WOWTYPE_VERSION:-$(sed -n 's/^version = "\(.*\)"/\1/p' core/Cargo.toml | head -1)}
-ARCHS=${WOWTYPE_MACOS_ARCHS:-arm64 x86_64}
+VERSION=${MYTYPE_VERSION:-$(sed -n 's/^version = "\(.*\)"/\1/p' core/Cargo.toml | head -1)}
+ARCHS=${MYTYPE_MACOS_ARCHS:-arm64 x86_64}
 export MACOSX_DEPLOYMENT_TARGET=12.0
 TARGET_DIR=target/macos
 
@@ -34,10 +34,10 @@ for arch in $ARCHS; do
     x86_64) rust=x86_64-apple-darwin ;;
     *) echo "不认识的架构 $arch" >&2; exit 1 ;;
   esac
-  cargo build --release --locked -q -p wowtype-core --target "$rust" --target-dir "$TARGET_DIR"
-  swiftc -O -target "$arch-apple-macos$MACOSX_DEPLOYMENT_TARGET" -module-name MyType -I macos/CWowtype \
+  cargo build --release --locked -q -p mytype-core --target "$rust" --target-dir "$TARGET_DIR"
+  swiftc -O -target "$arch-apple-macos$MACOSX_DEPLOYMENT_TARGET" -module-name MyType -I macos/CMyType \
     macos/Sources/Shared/*.swift macos/Sources/App/*.swift \
-    "$TARGET_DIR/$rust/release/libwowtype_core.a" \
+    "$TARGET_DIR/$rust/release/libmytype_core.a" \
     -framework Cocoa -framework InputMethodKit -framework Carbon \
     -framework AVFoundation -framework AudioUnit -framework CoreAudio \
     -liconv -o "$work/MyType-$arch"
@@ -65,8 +65,8 @@ for lproj in macos/Resources/*.lproj; do
 done
 cp "$DATA/lexicon.tsv" "$DATA/english.txt" "$res/"
 [[ -f "$DATA/words.lm" ]] && cp "$DATA/words.lm" "$res/"
-# 简繁对照表（设置里 Traditional=True 时用），和 Linux 包里的 /usr/share/wowtype/s2t.tsv 是同一份
-cp "${WOWTYPE_S2T:-core/data/s2t.tsv}" "$res/s2t.tsv"
+# 简繁对照表（设置里 Traditional=True 时用）
+cp "${MYTYPE_S2T:-core/data/s2t.tsv}" "$res/s2t.tsv"
 # 简繁表由 OpenCC 数据生成（Apache-2.0），许可证随包带上
 cp core/data/OPENCC-LICENSE "$res/OPENCC-LICENSE"
 [[ -f "$DATA/LICENSE" ]] && cp "$DATA/LICENSE" "$res/DATA-LICENSE"

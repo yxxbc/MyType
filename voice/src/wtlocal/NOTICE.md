@@ -11,4 +11,4 @@
 - 接口：`AsrChannel`（本项目的识别渠道抽象），支持流式中间结果
 
 模型是腾讯的资源包，**不随仓库分发**：首次使用时从官方 CDN 下载（约 100MB），
-校验大小与 MD5 后解包，落在 `$XDG_DATA_HOME/wowtype/wtlocal`。
+校验大小与 MD5 后解包，落在 `$XDG_DATA_HOME/mytype/wtlocal`。

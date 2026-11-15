@@ -75,10 +75,10 @@ LGPL-3.0 是在 GPL-3.0 之上的附加许可，GPL-3.0 全文见同目录（或
 源文件：wubi86.dict.yaml，sha256 ${WUBI_DICT_SHA256}
 下载：https://raw.githubusercontent.com/rime/rime-wubi/${WUBI_COMMIT}/wubi86.dict.yaml
 
-wubi86.tsv 由 WowType 的 tools/wubi2tsv.py 转换，scripts/make-wubi.sh 可重新生成（逐字节相同）：
+wubi86.tsv 由 MyType 的 tools/wubi2tsv.py 转换，scripts/make-wubi.sh 可重新生成（逐字节相同）：
 每行 code<TAB>词<TAB>频次，按码升序、频次降序；去掉了 z 开头的符号码、权重为 0 的扩展区生僻字与部首、
 注释掉的条目和 stem（构词码）列；没有权重的《通用规范汉字表》字频次记 1。
-WowType 的源代码（含上面两个脚本）：https://github.com/Gloridust/WowType
+MyType 的源代码（含上面两个脚本）：https://github.com/yxxbc/MyType
 EOF
 
 echo "wubi86.tsv: $(wc -l < "$OUT/wubi86.tsv" | tr -d ' ') 条"

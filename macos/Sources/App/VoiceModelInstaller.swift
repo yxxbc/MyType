@@ -1,7 +1,7 @@
-// 语音识别模型（微信输入法的离线语音包）：和 Linux 设置的「语音」页一样，从腾讯的 CDN 下载官方包，
+// 语音识别模型（微信输入法的离线语音包）：和设置窗口的「语音」页一样，从腾讯的 CDN 下载官方包，
 // 校验后解出模型和词表放进数据目录的 wtlocal/。模型是腾讯的，不随安装包分发；和微信输入法装没装无关。
 //
-// 地址、大小和 voice/src/wtlocal/pack.rs、settings/wowtype-config 一样（那两边钉的是 MD5，
+// 地址、大小和 voice/src/wtlocal/pack.rs、settings/mytype-config 一样（那两边钉的是 MD5，
 // 这里钉同一个包的 SHA256，下载器边下边算）。解包照 pack.rs：外层签名 zip 里只取
 // ime_asr_decoder_model.zip，再扁平解出，只留 *.xnet 和 dict.decoder.utf8.txt。
 
@@ -10,7 +10,7 @@ import Foundation
 enum VoiceModelInstaller {
     static let url = "https://download.z.weixin.qq.com/publish_words/v1/ime_asr_decoder_model/20260710220526250_ime_asr_decoder_model.apk"
     static let size: Int64 = 102_920_639
-    /// MD5 28386481eb94ff73b28ee3949c0cf690（和 Linux 钉的一样）的那个包的 SHA256
+    /// MD5 28386481eb94ff73b28ee3949c0cf690（和 voice/src/wtlocal/pack.rs 钉的一样）的那个包的 SHA256
     static let sha256 = "b3729fbe928b25740cc9cd781537175b1db4a445bd78bf464267c0c4633e0863"
     static let inner = "ime_asr_decoder_model.zip"
     static let dict = "dict.decoder.utf8.txt"

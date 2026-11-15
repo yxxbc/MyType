@@ -89,7 +89,7 @@ final class FakeTextInput: NSObject, IMKTextInput {
     func overrideKeyboard(withKeyboardNamed keyboardUniqueName: String!) {}
     func selectMode(_ modeIdentifier: String!) {}
     func supportsUnicode() -> Bool { true }
-    func bundleIdentifier() -> String! { "io.github.gloridust.wowtype.shelltests.client" }
+    func bundleIdentifier() -> String! { "io.github.yxxbc.mytype.shelltests.client" }
     func windowLevel() -> CGWindowLevel { CGWindowLevelForKey(.normalWindow) }
     func supportsProperty(_ property: TSMDocumentPropertyTag) -> Bool { false }
     func uniqueClientIdentifierString() -> String! { "shelltests-\(ObjectIdentifier(self).hashValue)" }

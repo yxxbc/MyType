@@ -365,7 +365,7 @@ impl LanguageModel for ArpaLm {
     }
 }
 
-/// 按文件内容载入语言模型：`wowtype-lmbuild` 生成的二进制（开头是 `WTLM`）用
+/// 按文件内容载入语言模型：`mytype-lmbuild` 生成的二进制（开头是 `WTLM`）用
 /// [`crate::wordlm::WordLm`]，否则当 `前词<TAB>后词<TAB>次数` 的 TSV。
 pub fn load_lm<P: AsRef<Path>>(path: P) -> Result<std::sync::Arc<dyn LanguageModel>> {
     let path = path.as_ref();
@@ -474,7 +474,7 @@ ngram 2=2
 /// 领域词级模型的默认权重（[`MixedLm`]）。Tatoeba 上 0.2–0.4 都试过，0.4 在领域内最好、领域外不掉。
 pub const DOMAIN_LM_WEIGHT: f64 = 0.4;
 
-/// 通用词级模型混上一个领域模型（用户拿自己的语料用 `wowtype-lmbuild` 训的）：
+/// 通用词级模型混上一个领域模型（用户拿自己的语料用 `mytype-lmbuild` 训的）：
 /// `score = (1 − w) · 通用 + w · 领域`。
 ///
 /// 词级模型的分数是「搭配比各自随便出现常见多少」的对数（`ln P(cur|prev) − ln P(cur)`，见 [`crate::wordlm`]），

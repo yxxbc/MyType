@@ -1,4 +1,4 @@
-// 下载、安装可选的万象词库包（和 Linux 设置的「万象拼音」一样）。规矩在 Shared/LexiconPack.swift。
+// 下载、安装可选的万象词库包（和设置窗口的「万象拼音」一样）。规矩在 Shared/LexiconPack.swift。
 //
 // 下载：问 GitHub 最新正式版的文件列表，取 wowtype-data-wanxiang-<版本>.tar.gz，按同一页的 SHA256SUMS 校验。
 // 安装：先用系统的 tar 列出包里的条目，只许四个普通文件；解到旁边的临时目录，检查好 lexicon.tsv 再换进去，
@@ -8,7 +8,7 @@ import CryptoKit
 import Foundation
 
 enum LexiconPackInstaller {
-    static let releaseAPI = URL(string: "https://api.github.com/repos/yxxbc/WowType/releases/latest")!
+    static let releaseAPI = URL(string: "https://api.github.com/repos/yxxbc/MyType/releases/latest")!
 
     struct Release {
         let tag: String
@@ -33,7 +33,7 @@ enum LexiconPackInstaller {
     // MARK: 下载
 
     static func fetchLatest() throws -> Release {
-        let data = try get(releaseAPI, timeout: 20)
+        let data = try HTTP.get(releaseAPI, timeout: 20)
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw PackError("发布页的内容看不懂")
         }
@@ -55,50 +55,19 @@ enum LexiconPackInstaller {
         guard let sumsURL = release.assets[LexiconPack.checksumFile] else {
             throw PackError("发布页缺少 \(LexiconPack.checksumFile)，暂不安装")
         }
-        let sumsText = String(decoding: try get(sumsURL, timeout: 20), as: UTF8.self)
+        let sumsText = String(decoding: try HTTP.get(sumsURL, timeout: 20), as: UTF8.self)
         let expected: String
         switch LexiconPack.checksums(sumsText, wanted: [pack.name]) {
         case .success(let sums): expected = sums[pack.name]!
         case .failure(let error): throw error
         }
         let file = try DownloadTask(url: pack.url, progress: progress).run()
-        let digest = try sha256(of: file)
+        let digest = try FileHash.sha256(of: file)
         guard digest == expected else {
             try? FileManager.default.removeItem(at: file)
             throw PackError("\(pack.name) 校验和不对，可能没下完整，请重试")
         }
         return file
-    }
-
-    private static func get(_ url: URL, timeout: TimeInterval) throws -> Data {
-        var request = URLRequest(url: url, timeoutInterval: timeout)
-        request.setValue(url.host == "api.github.com" ? "application/vnd.github+json" : "*/*",
-                         forHTTPHeaderField: "Accept")
-        request.setValue("MyType", forHTTPHeaderField: "User-Agent")
-        let done = DispatchSemaphore(value: 0)
-        var result: Result<Data, Error> = .failure(PackError("连不上 GitHub"))
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            if let error {
-                result = .failure(error)
-            } else if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-                result = .failure(PackError("GitHub 返回 \(http.statusCode)"))
-            } else {
-                result = .success(data ?? Data())
-            }
-            done.signal()
-        }.resume()
-        done.wait()
-        return try result.get()
-    }
-
-    static func sha256(of file: URL) throws -> String {
-        let handle = try FileHandle(forReadingFrom: file)
-        defer { try? handle.close() }
-        var hasher = SHA256()
-        while let chunk = try handle.read(upToCount: 1 << 20), !chunk.isEmpty {
-            hasher.update(data: chunk)
-        }
-        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
     // MARK: 安装
@@ -188,56 +157,5 @@ enum LexiconPackInstaller {
             throw PackError("词库包解不开：\(message.isEmpty ? "tar 出错" : message)")
         }
         return String(decoding: data, as: UTF8.self)
-    }
-}
-
-/// 带进度的下载（URLSession 的下载任务），下到临时文件。
-private final class DownloadTask: NSObject, URLSessionDownloadDelegate {
-    private let url: URL
-    private let progress: (Int64, Int64) -> Void
-    private let done = DispatchSemaphore(value: 0)
-    private var result: Result<URL, Error> = .failure(PackError("下载没完成"))
-
-    init(url: URL, progress: @escaping (Int64, Int64) -> Void) {
-        self.url = url
-        self.progress = progress
-    }
-
-    func run() throws -> URL {
-        let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
-        var request = URLRequest(url: url, timeoutInterval: 60)
-        request.setValue("MyType", forHTTPHeaderField: "User-Agent")
-        session.downloadTask(with: request).resume()
-        done.wait()
-        session.finishTasksAndInvalidate()
-        return try result.get()
-    }
-
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64,
-                    totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
-        progress(totalBytesWritten, max(totalBytesExpectedToWrite, 0))
-    }
-
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-        if let http = downloadTask.response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            result = .failure(PackError("下载失败：GitHub 返回 \(http.statusCode)"))
-            return
-        }
-        // location 在这个回调返回后就被删掉，先挪走
-        let keep = FileManager.default.temporaryDirectory
-            .appendingPathComponent("wowtype-\(UUID().uuidString)-\(url.lastPathComponent)")
-        do {
-            try FileManager.default.moveItem(at: location, to: keep)
-            result = .success(keep)
-        } catch {
-            result = .failure(error)
-        }
-    }
-
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        if let error {
-            result = .failure(error)
-        }
-        done.signal()
     }
 }

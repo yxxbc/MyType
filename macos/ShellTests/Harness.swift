@@ -15,16 +15,18 @@ func check(_ ok: Bool, _ name: String, _ detail: @autoclosure () -> String = "")
 
 let state = AppState.shared
 
-/// 数据目录必须是 WOWTYPE_DATA_DIR 指的临时目录（不碰 ~/Library）；建好 NSApplication（不 run、不激活、
+/// 数据目录必须是 MYTYPE_DATA_DIR 指的临时目录（不碰 ~/Library）；建好 NSApplication（不 run、不激活、
 /// 不进程序坞），候选框只排版不上屏，载入词库。
 func setUpHarness() {
     setbuf(stdout, nil)
-    let realHome = String(cString: getpwuid(getuid())!.pointee.pw_dir)
-    guard let dir = ProcessInfo.processInfo.environment["WOWTYPE_DATA_DIR"], !dir.isEmpty,
+    // 系统目录服务坏的时候 getpwuid 会返回 NULL（用 501 进不了 passwd），退回 NSHomeDirectory()
+    var realHome = NSHomeDirectory()
+    if let pw = getpwuid(getuid()) { realHome = String(cString: pw.pointee.pw_dir) }
+    guard let dir = ProcessInfo.processInfo.environment["MYTYPE_DATA_DIR"], !dir.isEmpty,
           !URL(fileURLWithPath: dir).standardizedFileURL.path.hasPrefix(realHome + "/Library"),
           state.supportDir.standardizedFileURL.path == URL(fileURLWithPath: dir).standardizedFileURL.path
     else {
-        print("要用 WOWTYPE_DATA_DIR 指到一个临时目录（不能是 ~/Library 下面）")
+        print("要用 MYTYPE_DATA_DIR 指到一个临时目录（不能是 ~/Library 下面）")
         exit(2)
     }
     NSApplication.shared.setActivationPolicy(.prohibited)
@@ -62,7 +64,7 @@ func windowsOnScreen() -> [String] {
 
 private var configStampSeconds = Date().timeIntervalSince1970.rounded(.down) - 10_000
 
-/// 写 wowtype.conf（语音、剪贴板历史总是关着：不碰麦克风、不读系统剪贴板）。
+/// 写 mytype.conf（语音、剪贴板历史总是关着：不碰麦克风、不读系统剪贴板）。
 /// 修改时间每次往后挪一秒，输入法的 checkForChanges 一定看得出变了。
 func writeConfig(_ values: [String: String]) {
     var all = ["Voice": "False", "ClipboardHistory": "False"]

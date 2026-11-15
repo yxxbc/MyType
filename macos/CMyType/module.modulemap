@@ -1,0 +1,4 @@
+module CMyType [system] {
+    header "../../core/include/mytype_core.h"
+    export *
+}

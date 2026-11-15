@@ -1,6 +1,6 @@
 // macOS 按键 → 核心的键码（XKB keysym 子集）和修饰键。
 //
-// 这个文件不依赖 AppKit：Linux 上也能编译，按键测试（Tests/main.swift）在 CI 的 Linux 和 macOS 上都跑。
+// 这个文件不依赖 AppKit，按键测试（Tests/main.swift）由 macos/test.sh 直接跑。
 // 输入法外壳（InputController.swift）把 NSEvent 的 keyCode、characters、modifierFlags 原样传进来。
 
 /// 核心认的键码（和 X11 keysym 取值一样）。
@@ -23,7 +23,7 @@ public enum Keysym {
     public static let delete: UInt32 = 0xffff
 }
 
-/// 核心的修饰键位掩码（WOWTYPE_MOD_*）。
+/// 核心的修饰键位掩码（MYTYPE_MOD_*）。
 public struct Modifiers: OptionSet, Sendable {
     public let rawValue: UInt32
     public init(rawValue: UInt32) { self.rawValue = rawValue }
@@ -140,11 +140,11 @@ public func translateKeyDown(keyCode: UInt16, characters: String?, charactersIgn
     return KeyInput(keysym: scalar.value, modifiers: modifiers)
 }
 
-/// 快捷键（设置里的 EmojiKey）。键名和 fcitx5 一样：修饰键 + 键，用 + 连起来，比如 Control+period、
+/// 快捷键（设置里的 EmojiKey）。键名和以前一样：修饰键 + 键，用 + 连起来，比如 Control+period、
 /// Control+Shift+E、Alt+semicolon。键只能是可见的 ASCII 字符（X keysym 名字，或者字符本身）。
 ///
-/// macOS 上 Command 组合键多半被应用的菜单先拿走，到不了输入法，所以 Super（Linux 上的 Windows 键）
-/// 当 Control：Linux 的默认值 Super+period 拷过来就是 Control+.，和 macOS 的默认值一样。
+/// macOS 上 Command 组合键多半被应用的菜单先拿走，到不了输入法，所以 Super（以前的 Windows 键）
+/// 当 Control：旧版的默认值 Super+period 拷过来就是 Control+.，和 macOS 的默认值一样。
 public struct Shortcut: Equatable, Sendable {
     /// 可见 ASCII；字母存小写
     public var keysym: UInt32
@@ -164,7 +164,7 @@ public struct Shortcut: Equatable, Sendable {
         self.modifiers = modifiers.intersection([.shift, .control, .option])
     }
 
-    /// 解析 fcitx5 的键名；认不出返回 nil（设置里写错了就保持默认）。
+    /// 解析 键名；认不出返回 nil（设置里写错了就保持默认）。
     public init?(name: String) {
         let parts = name.split(separator: "+", omittingEmptySubsequences: false).map { trimSpaces(String($0)) }
         guard let key = parts.last, !key.isEmpty else { return nil }
@@ -187,7 +187,7 @@ public struct Shortcut: Equatable, Sendable {
         if modifiers.contains(.control) { parts.append("Control") }
         if modifiers.contains(.option) { parts.append("Alt") }
         if modifiers.contains(.shift) { parts.append("Shift") }
-        // 按着 Shift 的字母写大写（和 fcitx5 一样：Control+Shift+E），两端设置里的预设才对得上
+        // 按着 Shift 的字母写大写（和以前一样：Control+Shift+E），两端设置里的预设才对得上
         let shifted = modifiers.contains(.shift) && keysym >= 0x61 && keysym <= 0x7a
         let index = Int(shifted ? keysym - 0x20 : keysym) - 0x20
         let names = Shortcut.asciiNames

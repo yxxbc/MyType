@@ -5,7 +5,7 @@
 #   scripts/make-tatoeba-freq.sh --check    重新生成，和仓库里的逐字节比较，不一样就失败（不进默认构建）
 #
 # 语料钉死在 Internet Archive 存的一份导出上（Tatoeba 官网的文件每周重新导出），核对 sha256；
-# 本机已有这份文件时 WOWTYPE_TATOEBA_FILE=<路径>（同样校验）。分词、繁转简要钉死版本的包：
+# 本机已有这份文件时 MYTYPE_TATOEBA_FILE=<路径>（同样校验）。分词、繁转简要钉死版本的包：
 #   python3 -m pip install --require-hashes -r tools/requirements-data.txt
 # 换语料版本时同时改 URL、sha256、DATE、SENTENCES。
 set -euo pipefail
@@ -30,8 +30,8 @@ done
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 corpus=$tmp/cmn_sentences.tsv.bz2
-if [[ -n "${WOWTYPE_TATOEBA_FILE:-}" ]]; then
-  cp "$WOWTYPE_TATOEBA_FILE" "$corpus"
+if [[ -n "${MYTYPE_TATOEBA_FILE:-}" ]]; then
+  cp "$MYTYPE_TATOEBA_FILE" "$corpus"
 else
   curl -fsSL --retry 5 --retry-delay 10 -o "$corpus" "$TATOEBA_URL"
 fi

@@ -1,7 +1,7 @@
 //! 输入会话：一个输入框里的编辑状态和按键规则（见 docs/PORTING.md）。
 //!
-//! 目标是让 fcitx5 和 macOS 两个外壳只做「平台按键 → 会话 → 按结果画界面、上屏」，
-//! 输入行为都在这里。现在是一块一块从 fcitx5 外壳（`fcitx5-addon/src/wowtype_engine.cpp`）
+//! 目标是让 和 macOS 两个外壳只做「平台按键 → 会话 → 按结果画界面、上屏」，
+//! 输入行为都在这里。现在是一块一块从上游外壳
 //! 挪过来的，已经挪进来的：
 //!
 //! - 编辑区里的原始输入、已选词栈（长句先选开头的词）；
@@ -12,7 +12,7 @@
 //!
 //! - 选词（句首词进已选栈，整句上屏）和学习（选词记录、分几次选出来的整句也记一次）；
 //! - 空格、回车、数字、分号引号选词、计算器和双拼分号进编辑区，翻页、移光标和
-//!   横排下键展开的候选面板（页和光标照 fcitx5 的候选列表：各管各的，光标可以不在这一页上）。
+//!   横排下键展开的候选面板（页和光标照 候选列表：各管各的，光标可以不在这一页上）。
 //!
 //! 还没挪的键 [`Session::key`] 返回 `handled = false`，外壳接着用自己的旧逻辑处理
 //! （打字途中的标点、其他可见字符、吃掉的光标键）。鼠标点候选按全局序号调
@@ -23,7 +23,7 @@ pub use crate::symbols::PunctStyle;
 use crate::translate::JobState;
 use crate::Engine;
 
-/// 平台无关的键码：XKB keysym 的子集（fcitx5 直接用，macOS 外壳把 kVK_* 翻成这个）。
+/// 平台无关的键码：XKB keysym 的子集（直接用，macOS 外壳把 kVK_* 翻成这个）。
 pub mod keysym {
     pub const SHIFT_L: u32 = 0xffe1;
     pub const SHIFT_R: u32 = 0xffe2;
@@ -70,7 +70,7 @@ pub mod keysym {
     pub const ASCII_CIRCUM: u32 = 0x5e;
 }
 
-/// 修饰键位掩码，和 X11/fcitx5 的 KeyState 取值一样（fcitx5 外壳可以直接传）。
+/// 修饰键位掩码，和 X11/ KeyState 取值一样（外壳可以直接传）。
 pub mod modifier {
     pub const SHIFT: u32 = 1 << 0;
     pub const CAPS: u32 = 1 << 1;
@@ -80,7 +80,7 @@ pub mod modifier {
     pub const SUPER: u32 = 1 << 6;
 }
 
-/// 外壳按平台的全局热键认出来的候选动作（fcitx5 的「上一页」「下一个候选」热键，
+/// 外壳按平台的全局热键认出来的候选动作（「上一页」「下一个候选」热键，
 /// 候选框上的翻页按钮）。方向键不走这个，按横排 / 竖排照会话自己的规则。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum KeyAction {
@@ -143,7 +143,7 @@ pub trait TranslateBackend {
     fn cancel(&self);
     /// 现在的请求还是翻译 source 的才取消。一个进程只有一个翻译器、所有输入框共用：
     /// 输入框 A 清空时，翻译器上跑的可能已经是输入框 B 后来发的请求，不能把它取消掉。
-    /// 会话都在同一个线程上调翻译器（插件的事件循环、macOS 的主线程），先看再取消之间不会有别人 start。
+    /// 会话都在同一个线程上调翻译器（外壳的事件循环、macOS 的主线程），先看再取消之间不会有别人 start。
     fn cancel_source(&self, source: &str) {
         if self.poll().source == source {
             self.cancel();
@@ -240,7 +240,7 @@ impl Key {
         }
     }
 
-    /// 按下一个可见 ASCII 字符（大写字母带上 Shift，和 fcitx5 收到的一样）。
+    /// 按下一个可见 ASCII 字符（大写字母带上 Shift，和 收到的一样）。
     pub fn char(c: char) -> Self {
         let modifiers = if c.is_ascii_uppercase() {
             modifier::SHIFT
@@ -278,7 +278,7 @@ impl Key {
         self.modifiers & (modifier::CTRL | modifier::ALT | modifier::SUPER) != 0
     }
 
-    /// 数字键（主键盘和小键盘）的值；带了 CapsLock、NumLock 以外的修饰键不算（和 fcitx5 一样）。
+    /// 数字键（主键盘和小键盘）的值；带了 CapsLock、NumLock 以外的修饰键不算（和以前一样）。
     fn digit(&self) -> Option<usize> {
         if self.modifiers & !(modifier::CAPS | modifier::NUMLOCK) != 0 {
             return None;
@@ -439,7 +439,7 @@ pub enum ArrowKeys {
     Caret,
 }
 
-/// 候选框的状态（过渡：fcitx5 外壳按它摆自己的候选列表）。
+/// 候选框的状态（过渡：外壳按它摆自己的候选列表）。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct View {
     /// 普通候选框在第几页。
@@ -1517,7 +1517,7 @@ impl<'e> Session<'e> {
     /// Shift 的按下、松开，以及打断单按的别的键。Some：处理完了（handled 是里面的值，
     /// 单按切换了模式时为 true）；None：接着照常处理（Shift 的按下也接着处理：展开面板要收起）。
     ///
-    /// 和以前 Linux 外壳的规矩一样：按下时带着 Ctrl / Alt / Super、外壳开着面板时不算；
+    /// 和上游外壳的规矩一样：按下时带着 Ctrl / Alt / Super、外壳开着面板时不算；
     /// 按住不放的自动重复不重新计时；松开时按键码认（没有键码时按符号）；
     /// 按下以后按了别的键（按下或松开）就不算；按住超过 shift_tap_ms 不算。
     fn shift_key(&mut self, key: &Key) -> Option<bool> {
@@ -1949,7 +1949,7 @@ impl<'e> Session<'e> {
         self.page + 1 < n.div_ceil(self.page_size())
     }
 
-    /// 上一页。光标原来在这一页上的话跟着到新的一页的第一个（和 fcitx5 一样）。
+    /// 上一页。光标原来在这一页上的话跟着到新的一页的第一个（和以前一样）。
     fn prev_page(&mut self) {
         if self.has_prev_page() {
             let on_page = self.cursor_on_page().is_some();
@@ -2282,7 +2282,7 @@ impl<'e> Session<'e> {
         if !self.composing() || !self.config.wubi {
             String::new()
         } else if self.engine.is_some_and(|e| e.wubi().is_none()) {
-            "没有五笔码表，先按全拼打（重装 WowType 可以修好）".to_owned()
+            "没有五笔码表，先按全拼打（重装 MyType 可以修好）".to_owned()
         } else if n == 0 && self.wubi_code() {
             "空码".to_owned()
         } else {
@@ -2290,7 +2290,7 @@ impl<'e> Session<'e> {
         }
     }
 
-    /// 候选框的状态（过渡：fcitx5 外壳按它摆自己的候选列表）。
+    /// 候选框的状态（过渡：外壳按它摆自己的候选列表）。
     pub fn view(&mut self) -> View {
         if let Some(state) = &self.tool {
             let emoji = matches!(state.tool, Tool::Emoji { .. });

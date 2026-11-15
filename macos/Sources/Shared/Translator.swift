@@ -1,17 +1,17 @@
-// 互译：核心的翻译器（wowtype_translate_*）包一层，组字（Composer）只认 TranslationBackend，
-// 按键测试换成假的。和 Linux 一样一个进程只有一个翻译器（本地模型的 llama-server 也只起一个），
+// 互译：核心的翻译器（mytype_translate_*）包一层，组字（Composer）只认 TranslationBackend，
+// 按键测试换成假的。和以前一样一个进程只有一个翻译器（本地模型的 llama-server 也只起一个），
 // 所有输入框共用；每个输入框的会话只取消自己发的请求。
 //
-// 不依赖 Foundation / AppKit：按键测试在 Linux 上也编。
+// 不依赖 Foundation / AppKit：按键测试不依赖 AppKit 也能编。
 
-import CWowtype
+import CMyType
 #if canImport(Glibc)
 import Glibc
 #else
 import Darwin
 #endif
 
-/// 翻译的一份快照（wowtype_translate_poll）。
+/// 翻译的一份快照（mytype_translate_poll）。
 public struct TranslateSnapshot: Equatable {
     public enum Phase: Equatable {
         case idle
@@ -53,20 +53,20 @@ public final class Translator: TranslationBackend {
     private let handle: OpaquePointer
 
     public init() {
-        handle = wowtype_translate_new()
+        handle = mytype_translate_new()
     }
 
     deinit {
         // 本地模型的 llama-server 也一起停掉
-        wowtype_translate_free(handle)
+        mytype_translate_free(handle)
     }
 
     /// 照设置配：keyFile 是 API Key 文件（不在就不带 Key）；defaultLocalModel 是设置里
     /// TranslateLocalModel 留空时用的模型文件；llamaServer 是 TranslateLlamaServer 留空时
     /// 外壳找到的 llama-server（输入法进程的 PATH 里没有 Homebrew）。
-    public func configure(_ config: WowtypeConfig, keyFile: String, defaultLocalModel: String,
+    public func configure(_ config: MyTypeConfig, keyFile: String, defaultLocalModel: String,
                           llamaServer: String = "") {
-        wowtype_translate_configure(handle, config.translateBaseUrl, config.translateModel,
+        mytype_translate_configure(handle, config.translateBaseUrl, config.translateModel,
                                     config.translateTarget, config.translateFormal ? 1 : 0, keyFile)
         var model = ""
         var server = ""
@@ -75,41 +75,41 @@ public final class Translator: TranslationBackend {
             server = config.translateLlamaServer.isEmpty ? llamaServer : config.translateLlamaServer
         }
         // 没选本地模型时传空串：不起进程、不占端口（已经起了的马上停掉）
-        wowtype_translate_configure_local(handle, model, server, UInt32(config.translateIdleMinutes * 60))
+        mytype_translate_configure_local(handle, model, server, UInt32(config.translateIdleMinutes * 60))
     }
 
     public var isReady: Bool {
-        wowtype_translate_ready(handle) == 1
+        mytype_translate_ready(handle) == 1
     }
 
     /// 本地模型的 llama-server 正在跑
     public var localRunning: Bool {
-        wowtype_translate_local_running(handle) == 1
+        mytype_translate_local_running(handle) == 1
     }
 
     public func start(_ text: String) {
-        wowtype_translate_start(handle, text)
+        mytype_translate_start(handle, text)
     }
 
     public func cancel() {
-        wowtype_translate_cancel(handle)
+        mytype_translate_cancel(handle)
     }
 
     public func poll() -> TranslateSnapshot {
         let phase: TranslateSnapshot.Phase
-        switch Int(wowtype_translate_poll(handle)) {
-        case Int(WOWTYPE_TRANSLATE_RUNNING): phase = .running
-        case Int(WOWTYPE_TRANSLATE_DONE): phase = .done
-        case Int(WOWTYPE_TRANSLATE_ERROR): phase = .error
+        switch Int(mytype_translate_poll(handle)) {
+        case Int(MYTYPE_TRANSLATE_RUNNING): phase = .running
+        case Int(MYTYPE_TRANSLATE_DONE): phase = .done
+        case Int(MYTYPE_TRANSLATE_ERROR): phase = .error
         default: phase = .idle
         }
-        return TranslateSnapshot(phase: phase, source: string(wowtype_translate_source(handle)),
-                                 text: string(wowtype_translate_text(handle)),
-                                 error: string(wowtype_translate_error(handle)))
+        return TranslateSnapshot(phase: phase, source: string(mytype_translate_source(handle)),
+                                 text: string(mytype_translate_text(handle)),
+                                 error: string(mytype_translate_error(handle)))
     }
 
     public func tag(for text: String) -> String {
-        string(wowtype_translate_tag(handle, text))
+        string(mytype_translate_tag(handle, text))
     }
 
     private func string(_ pointer: UnsafePointer<CChar>?) -> String {
@@ -117,8 +117,8 @@ public final class Translator: TranslationBackend {
     }
 }
 
-/// 互译的 API Key 文件：一行，就是 Key 本身（和 Linux 的 ~/.config/wowtype/translate.key 一样）。
-/// 不写进 wowtype.conf；文件只有自己能读写（0600）。
+/// 互译的 API Key 文件：一行，就是 Key 本身（和 旧版的 ~/Library/Application Support/MyType/translate.key 一样）。
+/// 不写进 mytype.conf；文件只有自己能读写（0600）。
 public enum TranslateKeyFile {
     /// 第一行去掉首尾空白；文件不在是空串。
     public static func read(_ path: String) -> String {
@@ -184,7 +184,7 @@ extension String {
     }
 }
 
-/// 把 TranslationBackend 包成会话要的函数表（wowtype_session_set_translate_backend）。
+/// 把 TranslationBackend 包成会话要的函数表（mytype_session_set_translate_backend）。
 /// 会话借用它：换翻译器时外壳先让会话换掉，再放掉旧的。
 final class TranslateBridge {
     let backend: TranslationBackend
@@ -201,9 +201,9 @@ final class TranslateBridge {
         free(tagString)
     }
 
-    var table: WowtypeTranslateBackend {
-        var table = WowtypeTranslateBackend()
-        table.size = UInt32(MemoryLayout<WowtypeTranslateBackend>.size)
+    var table: MyTypeTranslateBackend {
+        var table = MyTypeTranslateBackend()
+        table.size = UInt32(MemoryLayout<MyTypeTranslateBackend>.size)
         table.user = Unmanaged.passUnretained(self).toOpaque()
         table.start = { user, text in
             guard let user, let text else { return }

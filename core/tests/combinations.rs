@@ -4,9 +4,9 @@
 
 use std::sync::Arc;
 
-use wowtype_core::convert::Converter;
-use wowtype_core::lm::BigramLm;
-use wowtype_core::{Engine, Lexicon, MemoryLexicon};
+use mytype_core::convert::Converter;
+use mytype_core::lm::BigramLm;
+use mytype_core::{Engine, Lexicon, MemoryLexicon};
 
 fn engine(lexicon_tsv: &str) -> Engine {
     let lexicon: Arc<dyn Lexicon> = Arc::new(MemoryLexicon::from_tsv_str(lexicon_tsv).unwrap());
@@ -83,7 +83,7 @@ fn repeated_selection_boosts_candidate() {
 }
 #[test]
 fn auto_learn_under_shuangpin() {
-    // 插件在双拼模式下会把「键位串」当拼音传进来，自动学习要把它们展开成全拼
+    // 外壳在双拼模式下会把「键位串」当拼音传进来，自动学习要把它们展开成全拼
     let mut e = engine("ni hao\t你好\t5000\n");
     e.set_shuangpin(true);
     // 阿 = aa，特 = te

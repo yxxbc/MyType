@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # MyType 一键安装 / 升级（macOS 12 以上，Apple 芯片和 Intel）。
 #
-#   curl -fsSL https://raw.githubusercontent.com/yxxbc/WowType/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/yxxbc/MyType/main/install.sh | bash
 #
 # 做三件事：
 #   1. 从 GitHub Release 下载最新的 MyType-<版本>-macos.pkg
@@ -12,12 +12,12 @@
 # 不用到「隐私与安全性」里放行。
 #
 # 环境变量：
-#   WOWTYPE_VERSION=v0.5.0   装指定版本（默认最新）
-#   WOWTYPE_REPO=owner/repo  指定发布仓库（默认 yxxbc/WowType）
-#   WOWTYPE_BASE_URL=...     指定资产目录，可以是 file:///...（测试用）
+#   MYTYPE_VERSION=v0.5.0   装指定版本（默认最新）
+#   MYTYPE_REPO=owner/repo  指定发布仓库（默认 yxxbc/MyType）
+#   MYTYPE_BASE_URL=...     指定资产目录，可以是 file:///...（测试用）
 set -euo pipefail
 
-REPO=${WOWTYPE_REPO:-yxxbc/WowType}
+REPO=${MYTYPE_REPO:-yxxbc/MyType}
 
 say() { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31m出错：\033[0m %s\n' "$*" >&2; exit 1; }
@@ -29,7 +29,7 @@ usage() {
 默认下载、校验并安装最新的 MyType（macOS pkg）。
 --print-plan  只显示架构、仓库和包名，不联网、不安装。
 
-环境变量：WOWTYPE_VERSION、WOWTYPE_REPO、WOWTYPE_BASE_URL（测试用）。
+环境变量：MYTYPE_VERSION、MYTYPE_REPO、MYTYPE_BASE_URL（测试用）。
 EOF
 }
 
@@ -69,26 +69,26 @@ manifest_hash() { # <文件名> <SHA256SUMS>
 }
 
 main() {
-  [[ "$(uname -s)" == Darwin ]] || die "这个仓库只维护 macOS 版；Linux 的 fcitx5 插件请用上游 https://github.com/Gloridust/WowType"
-  local machine=${WOWTYPE_ARCH:-$(uname -m)}
+  [[ "$(uname -s)" == Darwin ]] || die "这个仓库只维护 macOS 版；需要 Linux 版请用上游 https://github.com/Gloridust/WowType"
+  local machine=${MYTYPE_ARCH:-$(uname -m)}
   case "$machine" in
     arm64|aarch64|x86_64) ;;
     *) die "只支持 Apple 芯片（arm64）和 Intel（x86_64），这台是 $machine" ;;
   esac
 
   if [[ "${1:-}" == "--print-plan" ]]; then
-    local requested=${WOWTYPE_VERSION:-<版本>}
+    local requested=${MYTYPE_VERSION:-<版本>}
     printf '系统：macOS %s\n仓库：%s\n包文件：MyType-%s-macos.pkg\n' "$machine" "$REPO" "${requested#v}"
     return
   fi
 
   command -v curl >/dev/null || die "需要 curl"
   local tag version package base expected actual tmp
-  tag=${WOWTYPE_VERSION:-$(latest_tag)}
+  tag=${MYTYPE_VERSION:-$(latest_tag)}
   [[ "$tag" == v* ]] || tag="v$tag"
   version=${tag#v}
   [[ "$version" =~ ^[a-zA-Z0-9][a-zA-Z0-9._+~^-]*$ ]] || die "无效的版本号：$version"
-  base=${WOWTYPE_BASE_URL:-"https://github.com/$REPO/releases/download/$tag"}
+  base=${MYTYPE_BASE_URL:-"https://github.com/$REPO/releases/download/$tag"}
   package="MyType-$version-macos.pkg"
   tmp=$(mktemp -d)
   trap 'rm -rf "${tmp:-}"' EXIT

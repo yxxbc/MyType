@@ -1,6 +1,6 @@
-// 语音键：设置里的 VoiceKey 用 fcitx5 的键名（和 Linux 一样，一份 wowtype.conf 两边通用），
+// 语音键：设置里的 VoiceKey 用 键名（和以前一样，一份 mytype.conf 两边通用），
 // 这里翻成 macOS 的键码。修饰键（右 Option 等）在 flagsChanged 里看按下 / 松开，F 键看 keyDown / keyUp。
-// 不依赖 Foundation / AppKit：按键测试在 Linux 上也编。
+// 不依赖 Foundation / AppKit：按键测试不依赖 AppKit 也能编。
 
 public struct VoiceKey: Equatable, Sendable {
     /// macOS 虚拟键码（kVK_*）
@@ -12,7 +12,7 @@ public struct VoiceKey: Equatable, Sendable {
 
     public var isModifier: Bool { deviceMask != 0 }
 
-    /// fcitx5 键名 → 键；留空、none、Mac 上没有的键（Menu）返回 nil，语音输入就不用热键。
+    /// 键名 → 键；留空、none、Mac 上没有的键（Menu）返回 nil，语音输入就不用热键。
     public init?(name: String) {
         guard let (code, mask) = VoiceKey.table[name] else { return nil }
         keyCode = code
@@ -41,7 +41,7 @@ public struct VoiceKey: Equatable, Sendable {
     ]
 }
 
-/// 正在听时音量画成一排竖条（和 Linux 插件的 voiceWave 一样，不足 6 个时左边补最低的）。
+/// 正在听时音量画成一排竖条（不足 6 个时左边补最低的）。
 public func voiceWave(_ levels: [Int]) -> String {
     let bars = Array("▁▂▃▄▅▆▇█")
     let shown = levels.suffix(6)

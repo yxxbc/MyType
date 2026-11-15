@@ -1,4 +1,4 @@
-// 一键下载本地翻译模型和跑它的 llama-server（和 Linux 设置的「离线翻译模型」一样）。规矩在 Shared/LocalModel.swift。
+// 一键下载本地翻译模型和跑它的 llama-server（和设置窗口的「离线翻译模型」一样）。规矩在 Shared/LocalModel.swift。
 //
 // 模型：下到数据目录的 models/，先写 .part，断了（取消、退出、断网）再点会接着下，下完校验 SHA256 再改名。
 // llama-server：系统里没有时下载 llama.cpp 官方的 macOS 包（钉死构建号和 SHA256），只解出 llama-server
@@ -71,13 +71,13 @@ enum LocalModelInstaller {
         return withUnsafeBytes(of: &name.machine) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
     }
 
-    /// 测试时可以用环境变量换掉下载地址和校验值（和 Linux 的 WOWTYPE_LOCAL_MODEL_URL 这些一样）
+    /// 测试时可以用环境变量换掉下载地址和校验值（和 旧版的 MYTYPE_LOCAL_MODEL_URL 这些一样）
     private static func env(_ name: String) -> String? {
         ProcessInfo.processInfo.environment[name].flatMap { $0.isEmpty ? nil : $0 }
     }
 
-    static var modelURL: String { env("WOWTYPE_LOCAL_MODEL_URL") ?? LocalModel.url }
-    static var modelSHA256: String { env("WOWTYPE_LOCAL_MODEL_SHA256") ?? LocalModel.sha256 }
+    static var modelURL: String { env("MYTYPE_LOCAL_MODEL_URL") ?? LocalModel.url }
+    static var modelSHA256: String { env("MYTYPE_LOCAL_MODEL_SHA256") ?? LocalModel.sha256 }
 
     /// 这台 Mac 能下载的官方 llama-server 包；系统太旧（要 13.3 以上）时是 nil
     static var llamaAsset: LocalModel.Asset? {
@@ -85,8 +85,8 @@ enum LocalModelInstaller {
         guard let asset = LocalModel.llamaAsset(machine: machine, os: (os.majorVersion, os.minorVersion)) else {
             return nil
         }
-        return LocalModel.Asset(name: asset.name, url: env("WOWTYPE_LLAMA_URL") ?? asset.url, size: asset.size,
-                                sha256: env("WOWTYPE_LLAMA_SHA256") ?? asset.sha256)
+        return LocalModel.Asset(name: asset.name, url: env("MYTYPE_LLAMA_URL") ?? asset.url, size: asset.size,
+                                sha256: env("MYTYPE_LLAMA_SHA256") ?? asset.sha256)
     }
 
     static func plan(model: String, customServer: String, supportDir: URL) -> LocalModel.Plan {

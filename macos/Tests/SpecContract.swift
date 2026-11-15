@@ -1,6 +1,6 @@
-// 设置契约：拿 spec/config.json、spec/lexicon-pack.json 对照 macOS 的 WowtypeConfig 和 LexiconPack。
-// Linux 那两端（fcitx5 插件、设置界面）在 scripts/test-config-contract.py 里对照同一份规格。
-// 规格目录由 macos/test.sh 用 WOWTYPE_SPEC_DIR 传进来（没设时用当前目录下的 spec/）。
+// 设置契约：拿 spec/config.json、spec/lexicon-pack.json 对照 macOS 的 MyTypeConfig 和 LexiconPack。
+// 规格只被 macOS 的测试对照（macos/test.sh）。
+// 规格目录由 macos/test.sh 用 MYTYPE_SPEC_DIR 传进来（没设时用当前目录下的 spec/）。
 
 #if canImport(Glibc)
 import Glibc
@@ -8,7 +8,7 @@ import Glibc
 import Darwin
 #endif
 
-/// 规格里的值写进 wowtype.conf 的样子：True / False、十进制数字、原样的字符串。
+/// 规格里的值写进 mytype.conf 的样子：True / False、十进制数字、原样的字符串。
 private func fileText(_ value: JSON) -> String? {
     switch value {
     case .bool(let b): return b ? "True" : "False"
@@ -24,7 +24,7 @@ private func enumValues(_ setting: JSON) -> [String] {
 }
 
 private func loadSpec(_ name: String) -> JSON? {
-    let dir = getenv("WOWTYPE_SPEC_DIR").map { String(cString: $0) } ?? "spec"
+    let dir = getenv("MYTYPE_SPEC_DIR").map { String(cString: $0) } ?? "spec"
     guard let text = readFile(dir + "/" + name), let spec = JSON.parse(text) else {
         check(false, "契约：读 \(dir)/\(name)")
         return nil
@@ -45,11 +45,11 @@ func checkConfigContract() {
     }
     let mine = all.filter { s in s["platforms"]?.array?.contains { $0.string == "macos" } == true }
     let specKeys = Set(mine.compactMap { $0["key"]?.string })
-    let ours = Set(WowtypeConfig.keys)
+    let ours = Set(MyTypeConfig.keys)
     check(ours == specKeys, "契约：macOS 认的键和规格一样",
           "规格里有、macOS 没有：\(specKeys.subtracting(ours).sorted())；macOS 有、规格里没有：\(ours.subtracting(specKeys).sorted())")
 
-    let d = WowtypeConfig()
+    let d = MyTypeConfig()
     let policy = spec["readRules"]?["outOfRange"]?["macos"]?.string ?? "?"
     for s in mine {
         guard let key = s["key"]?.string, let type = s["type"]?.string,
@@ -61,7 +61,7 @@ func checkConfigContract() {
         check(d.value(forKey: key) == def, "契约：\(key) 的默认值是 \(def)", d.value(forKey: key) ?? "（不认这个键）")
         /// 文件里写的是 raw，读出来是什么
         func readBack(_ raw: String) -> String? {
-            var c = WowtypeConfig()
+            var c = MyTypeConfig()
             c.setValue(raw, forKey: key)
             return c.value(forKey: key)
         }
@@ -104,11 +104,11 @@ func checkConfigContract() {
             let file = (c["file"]?.object ?? [:]).sorted { $0.key < $1.key }
                 .map { "\($0.key)=\($0.value.string ?? "")\n" }.joined()
             let expect = c["expect"].flatMap(fileText)
-            let parsed = WowtypeConfig.parse(file)
+            let parsed = MyTypeConfig.parse(file)
             check(parsed.value(forKey: key) == expect, "契约：文件是 \(file.debugDescription) 时 \(key) 是 \(expect ?? "?")",
                   parsed.value(forKey: key) ?? "nil")
             let written = parsed.serialized(into: file)
-            check(WowtypeConfig.parse(written) == parsed, "契约：文件是 \(file.debugDescription) 时写回去再读一样", written)
+            check(MyTypeConfig.parse(written) == parsed, "契约：文件是 \(file.debugDescription) 时写回去再读一样", written)
         }
     }
 
@@ -118,11 +118,11 @@ func checkConfigContract() {
         if let key = s["key"]?.string { byKey[key] = s }
     }
     let lists: [(String, [String])] = [
-        ("InputScheme", WowtypeConfig.InputScheme.allCases.map(\.rawValue)),
-        ("ShuangpinScheme", WowtypeConfig.shuangpinSchemes),
-        ("ShiftToggle", WowtypeConfig.ShiftToggle.allCases.map(\.rawValue)),
-        ("SelectKeys", WowtypeConfig.SelectKeys.allCases.map(\.rawValue)),
-        ("TranslateTarget", WowtypeConfig.translateTargets),
+        ("InputScheme", MyTypeConfig.InputScheme.allCases.map(\.rawValue)),
+        ("ShuangpinScheme", MyTypeConfig.shuangpinSchemes),
+        ("ShiftToggle", MyTypeConfig.ShiftToggle.allCases.map(\.rawValue)),
+        ("SelectKeys", MyTypeConfig.SelectKeys.allCases.map(\.rawValue)),
+        ("TranslateTarget", MyTypeConfig.translateTargets),
     ]
     for (key, values) in lists {
         let expected = byKey[key].map(enumValues) ?? []
@@ -131,7 +131,7 @@ func checkConfigContract() {
     let schemeNames = (byKey["InputScheme"]?["values"]?.array ?? []).map {
         ($0["name"]?.string ?? "", $0["value"]?.string ?? "")
     }
-    let ourSchemes = WowtypeConfig.InputScheme.allCases.map { ($0.name, $0.rawValue) }
+    let ourSchemes = MyTypeConfig.InputScheme.allCases.map { ($0.name, $0.rawValue) }
     check(ourSchemes.map { $0.0 } == schemeNames.map { $0.0 } && ourSchemes.map { $0.1 } == schemeNames.map { $0.1 },
           "契约：输入方案的名字", "规格 \(schemeNames)，macOS \(ourSchemes)")
     // whenMissing 的 ifTrue 指着的旧键（InputScheme 的 Shuangpin）已经不是设置项：从只有旧键的文件读进来，
@@ -141,12 +141,12 @@ func checkConfigContract() {
             continue
         }
         let file = "\(old)=True\n"
-        let base = WowtypeConfig.parse(file)
+        let base = MyTypeConfig.parse(file)
         for value in enumValues(s) {
             var wanted = base
             wanted.setValue(value, forKey: key)
             let written = wanted.merged(changesFrom: base, into: file)
-            check(WowtypeConfig.parse(written).value(forKey: key) == value,
+            check(MyTypeConfig.parse(written).value(forKey: key) == value,
                   "契约：\(old)=True 的文件改成 \(key)=\(value) 存盘再读", written)
             check(!written.split(separator: "\n").contains { $0.hasPrefix("\(old)=") },
                   "契约：存盘以后文件里还有旧键 \(old)", written)
@@ -155,9 +155,9 @@ func checkConfigContract() {
     let languages = (byKey["TranslateTarget"]?["values"]?.array ?? []).map {
         ($0["name"]?.string ?? "", $0["value"]?.string ?? "")
     }
-    check(WowtypeConfig.translateLanguages.map { $0.0 } == languages.map { $0.0 }
-          && WowtypeConfig.translateLanguages.map { $0.1 } == languages.map { $0.1 },
-          "契约：互译语言的名字和代码", "规格 \(languages)，macOS \(WowtypeConfig.translateLanguages)")
+    check(MyTypeConfig.translateLanguages.map { $0.0 } == languages.map { $0.0 }
+          && MyTypeConfig.translateLanguages.map { $0.1 } == languages.map { $0.1 },
+          "契约：互译语言的名字和代码", "规格 \(languages)，macOS \(MyTypeConfig.translateLanguages)")
     let providers = (spec["translateProviders"]?["items"]?.array ?? []).map {
         [$0["name"]?.string ?? "", $0["url"]?.string ?? "", $0["model"]?.string ?? ""]
     }
@@ -172,23 +172,23 @@ func checkConfigContract() {
         check(ours == presets, "契约：\(key) 的选项（macOS）", "规格 \(presets)，macOS \(ours)")
         check(ours.dropFirst().allSatisfy { Shortcut(name: $0)?.name == $0 }, "契约：\(key) 的选项都认得")
     }
-    let ourProviders = WowtypeConfig.translateProviders.map { [$0.name, $0.url, $0.model] }
+    let ourProviders = MyTypeConfig.translateProviders.map { [$0.name, $0.url, $0.model] }
     check(ourProviders == providers, "契约：翻译服务商", "规格 \(providers)，macOS \(ourProviders)")
 
-    // 读文件的规矩（三端一样）：整份 wowtype.conf 读出来是什么；写回去再读还是一样
+    // 读文件的规矩（见 spec/config.json）：整份 mytype.conf 读出来是什么；写回去再读还是一样
     for c in spec["readRules"]?["cases"]?["items"]?.array ?? [] {
         guard let file = c["file"]?.string, let expect = c["expect"]?.object else {
             check(false, "契约：readRules.cases 的例子写得不全")
             continue
         }
-        let parsed = WowtypeConfig.parse(file)
+        let parsed = MyTypeConfig.parse(file)
         for (key, value) in expect.sorted(by: { $0.key < $1.key }) {
             let want = value.string ?? "?"
             check(parsed.value(forKey: key) == want, "契约：文件是 \(file.debugDescription) 时 \(key) 是 \(want)",
                   parsed.value(forKey: key) ?? "nil")
         }
         let written = parsed.serialized(into: file)
-        check(WowtypeConfig.parse(written) == parsed, "契约：文件是 \(file.debugDescription) 时写回去再读一样", written)
+        check(MyTypeConfig.parse(written) == parsed, "契约：文件是 \(file.debugDescription) 时写回去再读一样", written)
     }
 }
 
@@ -230,7 +230,7 @@ func checkLexiconPackContract() {
         check(got == c["name"]?.string, "契约：包里的条目 \(raw.debugDescription)", got.map { $0.debugDescription } ?? "不许")
     }
 
-    let dir = "/tmp/wowtype-macos-harness-\(getpid())-contract"
+    let dir = "/tmp/mytype-macos-harness-\(getpid())-contract"
     mkdir(dir, 0o755)
     let lexicon = dir + "/lexicon.tsv"
     for c in cases?["lexicon"]?["cases"]?.array ?? [] {

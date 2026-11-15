@@ -1,4 +1,4 @@
-// 读设置契约（spec/*.json）用的小 JSON 解析器。测试要在 Linux 上也能编，不用 Foundation 的 JSONSerialization。
+// 读设置契约（spec/*.json）用的小 JSON 解析器。测试要在 不依赖 AppKit 也能编，不用 Foundation 的 JSONSerialization。
 
 enum JSON {
     case null

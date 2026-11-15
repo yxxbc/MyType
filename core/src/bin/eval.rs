@@ -1,7 +1,7 @@
 //! 排序评测：给定 (输入, 期望) 的 TSV，统计 top-1 / top-3 命中率。
 //!
 //! ```
-//! cargo run --release -p wowtype-core --bin wowtype-eval -- \
+//! cargo run --release -p mytype-core --bin mytype-eval -- \
 //!     --lexicon lexicon.tsv --eval cases.tsv [--weights coverage_score=1.5,prob=0]
 //! ```
 //!
@@ -11,9 +11,9 @@
 
 use std::sync::Arc;
 
-use wowtype_core::lm::{ArpaLm, BigramLm, LanguageModel, MixedLm};
-use wowtype_core::rank::{FeatureWeights, LinearRanker};
-use wowtype_core::{open_cached, Engine, EngineConfig, Lexicon};
+use mytype_core::lm::{ArpaLm, BigramLm, LanguageModel, MixedLm};
+use mytype_core::rank::{FeatureWeights, LinearRanker};
+use mytype_core::{open_cached, Engine, EngineConfig, Lexicon};
 
 fn fail(msg: &str) -> ! {
     eprintln!("{msg}");
@@ -26,7 +26,7 @@ fn main() {
     let mut eval_path = String::new();
     let mut lm_path: Option<String> = None;
     let mut domain_lm_path: Option<String> = None;
-    let mut domain_lm_weight = wowtype_core::lm::DOMAIN_LM_WEIGHT;
+    let mut domain_lm_weight = mytype_core::lm::DOMAIN_LM_WEIGHT;
     let mut arpa_path: Option<String> = None;
     let mut beam: Option<usize> = None;
     let mut max_candidates = 10usize;
@@ -143,7 +143,7 @@ fn main() {
             "--shuangpin" => shuangpin = true,
             "-h" | "--help" => {
                 println!(
-                    "wowtype-eval --lexicon <tsv> --eval <tsv> [--lm|--arpa <file>] [--beam n] [--k n]"
+                    "mytype-eval --lexicon <tsv> --eval <tsv> [--lm|--arpa <file>] [--beam n] [--k n]"
                 );
                 println!("            [--max n] [--weights name=v,...] [--fuzzy] [--shuangpin] [--domain-lm <file> [--domain-lm-weight w]]");
                 println!("            [--typo-cost x] [--completion-cost x] [--abbrev-cost x] [--tail-abbrev-cost x] [--no-typo] [--english <file>] [--show-top1]");
@@ -168,7 +168,7 @@ fn main() {
             Err(e) => fail(&format!("{e:#}")),
         }
     } else if let Some(path) = &lm_path {
-        match wowtype_core::lm::load_lm(path) {
+        match mytype_core::lm::load_lm(path) {
             Ok(v) => v,
             Err(e) => fail(&format!("{e:#}")),
         }
@@ -176,10 +176,10 @@ fn main() {
         Arc::new(BigramLm::default())
     };
 
-    // 领域模型：和插件里一样混在通用模型上（插件的权重固定是 DOMAIN_LM_WEIGHT）
+    // 领域模型：和外壳里一样混在通用模型上（外壳的权重固定是 DOMAIN_LM_WEIGHT）
     let lm: Arc<dyn LanguageModel> = match &domain_lm_path {
         Some(path) => {
-            let domain = wowtype_core::lm::load_lm(path).unwrap_or_else(|e| fail(&format!("{e:#}")));
+            let domain = mytype_core::lm::load_lm(path).unwrap_or_else(|e| fail(&format!("{e:#}")));
             Arc::new(MixedLm::new(lm, domain, domain_lm_weight))
         }
         None => lm,
@@ -250,7 +250,7 @@ fn main() {
                 continue;
             }
             let expected = expected.split('|').next().unwrap_or("").trim();
-            // 照插件里真实的选法：整句对就选整句；不对就选最长的、对得上的句首候选，
+            // 照外壳里真实的选法：整句对就选整句；不对就选最长的、对得上的句首候选，
             // 剩下的拼音接着打；最后把拼出来的整句也记一次
             engine.set_context("");
             let mut rest = input.to_string();
@@ -359,7 +359,7 @@ fn main() {
 }
 
 /// 排第一的候选是怎么来的（只在 top1 没中时统计）。
-fn miss_cause(input: &str, first: &wowtype_core::Candidate) -> &'static str {
+fn miss_cause(input: &str, first: &mytype_core::Candidate) -> &'static str {
     if first.consumed < input.len() {
         "句首词"
     } else if first.words.len() == 1 && first.words[0].pinyin.is_empty() {

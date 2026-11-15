@@ -1,7 +1,7 @@
 //! 词库压测：载入耗时与整条输入的延迟。
 //!
-//! 合成词库：cargo run --release -p wowtype-core --bin wowtype-bench
-//! 真实词库：cargo run --release -p wowtype-core --bin wowtype-bench -- --lexicon lexicon.tsv
+//! 合成词库：cargo run --release -p mytype-core --bin mytype-bench
+//! 真实词库：cargo run --release -p mytype-core --bin mytype-bench -- --lexicon lexicon.tsv
 //! 混上领域词级模型：... -- --lexicon lexicon.tsv --lm words.lm --domain-lm words.domain.lm
 //! 逐键延迟：... -- --lexicon lexicon.tsv --typing cases.tsv
 //!   （cases.tsv 每行第一列是输入，逐个前缀模拟打字，统计每次按键的耗时分布）
@@ -15,9 +15,9 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use wowtype_core::lm::BigramLm;
-use wowtype_core::session::{Config, Key, Session};
-use wowtype_core::{Engine, EngineConfig, Lexicon, MemoryLexicon, SYLLABLES, open_cached};
+use mytype_core::lm::BigramLm;
+use mytype_core::session::{Config, Key, Session};
+use mytype_core::{Engine, EngineConfig, Lexicon, MemoryLexicon, SYLLABLES, open_cached};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -125,10 +125,10 @@ fn main() {
         lexicon.len() as f64 / load.as_secs_f64() / 10_000.0
     );
 
-    let lm: Arc<dyn wowtype_core::LanguageModel> = match &lm_path {
+    let lm: Arc<dyn mytype_core::LanguageModel> = match &lm_path {
         Some(path) => {
             let started = Instant::now();
-            let lm = wowtype_core::lm::load_lm(path).expect("载入语言模型");
+            let lm = mytype_core::lm::load_lm(path).expect("载入语言模型");
             println!("语言模型载入 {:?}", started.elapsed());
             lm
         }
@@ -144,19 +144,19 @@ fn main() {
     }
     if let Some(groups) = fuzzy_groups {
         config.fuzzy = true;
-        config.fuzzy_groups = groups & wowtype_core::syllable::fuzzy::ALL;
+        config.fuzzy_groups = groups & mytype_core::syllable::fuzzy::ALL;
     }
     config.traditional = s2t_path.is_some();
     let mut engine = Engine::new(lex, lm).with_config(config);
     if let Some(path) = &domain_lm_path {
-        engine.set_domain_lm(Some(wowtype_core::lm::load_lm(path).expect("载入领域模型")));
+        engine.set_domain_lm(Some(mytype_core::lm::load_lm(path).expect("载入领域模型")));
     }
     if let Some(path) = &s2t_path {
         let started = Instant::now();
         let n = engine.load_conversion(path).expect("载入简繁表");
         println!("简繁表 {n} 条，载入 {:?}", started.elapsed());
     }
-    // 和 wowtype_engine_new 一样在载入时建好模糊音索引，不算进第一次按键
+    // 和 mytype_engine_new 一样在载入时建好模糊音索引，不算进第一次按键
     engine.prepare_fuzzy();
     if let Some(path) = &nnlm_path {
         let started = Instant::now();

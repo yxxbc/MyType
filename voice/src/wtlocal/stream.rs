@@ -101,7 +101,7 @@ impl Stream {
         self.finish_with(FinalMode::Whole)
     }
 
-    /// 定稿的几种算法（评测用，`wowtype-asr-eval` 比较它们）。
+    /// 定稿的几种算法（评测用，`mytype-asr-eval` 比较它们）。
     pub fn finish_with(&mut self, mode: FinalMode) -> String {
         let whole = match mode {
             FinalMode::Whole => Some(0),

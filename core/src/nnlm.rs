@@ -1,6 +1,6 @@
 //! 字级神经语言模型：读微信输入法 Linux 版自带的 `nlrgpt2_nnlm.bin`，给整句候选重排。
 //!
-//! 模型文件是腾讯的，**不随 WowType 分发**：用户本机装过微信输入法（或自己下载官方安装包）
+//! 模型文件是腾讯的，**不随 MyType 分发**：用户本机装过微信输入法（或自己下载官方安装包）
 //! 才有。这里只放读取和推理代码。文件格式和模型结构见 `docs/DATA.md` 的 NNLM 一节，简单说：
 //!
 //! - 文件 = 1 字节标志 + u32 长度 + TFLite 模型 + 字表哈希表 + 末尾一段 JSON；
@@ -566,12 +566,12 @@ fn read_tflite_tensors(d: &[u8]) -> Result<HashMap<String, (Vec<usize>, Vec<f32>
 mod tests {
     use super::*;
 
-    /// 本机有模型文件时才跑（模型不随仓库分发）。WOWTYPE_NNLM 可指定路径。
+    /// 本机有模型文件时才跑（模型不随仓库分发）。MYTYPE_NNLM 可指定路径。
     fn model() -> Option<Nnlm> {
-        let path = std::env::var("WOWTYPE_NNLM").ok().or_else(|| {
+        let path = std::env::var("MYTYPE_NNLM").ok().or_else(|| {
             let home = std::env::var("HOME").ok()?;
             Some(format!(
-                "{home}/.local/share/wowtype/wetype/nlrgpt2_nnlm.bin"
+                "{home}/.local/share/mytype/wetype/nlrgpt2_nnlm.bin"
             ))
         })?;
         if !Path::new(&path).exists() {
