@@ -25,11 +25,13 @@ else
   LINK=("$LIBDIR/libmytype_core.a" -lgcc_s -lutil -lrt -lpthread -lm -ldl)
 fi
 SWIFTC=(swiftc)
+# CI 上可以用 -Onone 编译测试，省很多时间；默认 -O 和以前一样
+SWIFT_OPT=${SWIFT_OPT:--O}
 if [[ -n "${MYTYPE_SWIFT_DOCKER:-}" ]]; then
   SWIFTC=(docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:$PWD" -w "$PWD" "$MYTYPE_SWIFT_DOCKER" swiftc)
 fi
 
-"${SWIFTC[@]}" -O -I macos/CMyType \
+"${SWIFTC[@]}" $SWIFT_OPT -I macos/CMyType \
   macos/Sources/Shared/*.swift macos/Tests/*.swift \
   "${LINK[@]}" -o "$OUT/mytype-macos-harness"
 

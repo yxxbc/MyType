@@ -25,7 +25,8 @@ app_sources=()
 for f in macos/Sources/App/*.swift; do
   [[ "$(basename "$f")" == main.swift ]] || app_sources+=("$f")
 done
-swiftc -O -module-name MyType -I macos/CMyType \
+SWIFT_OPT=${SWIFT_OPT:--O}
+swiftc $SWIFT_OPT -module-name MyType -I macos/CMyType \
   macos/Sources/Shared/*.swift "${app_sources[@]}" macos/ShellTests/*.swift \
   "$TARGET_DIR/release/libmytype_core.a" \
   -framework Cocoa -framework InputMethodKit -framework Carbon -framework SwiftUI \

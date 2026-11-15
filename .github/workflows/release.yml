@@ -35,6 +35,8 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # 测试用 -Onone 编译 Swift；正式包还是 build.sh 里的 -O
+  SWIFT_OPT: -Onone
 
 jobs:
   release:
