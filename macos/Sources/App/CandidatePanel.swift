@@ -21,13 +21,13 @@ struct CandidateTheme {
     var row: NSColor
 
     static let light = CandidateTheme(
-        background: .rgb(0xFFFFFF), border: .rgb(0xDCE3DF), text: .rgb(0x1D2321), label: .rgb(0x7A8580),
-        highlight: .rgb(0x0EAF76), highlightText: .rgb(0xFFFFFF), arrow: .rgb(0x0EAF76),
-        row: .rgb(0x0EAF76, alpha: 0.12))
+        background: .rgb(Brand.paper), border: .rgb(Brand.border), text: .rgb(Brand.text), label: .rgb(Brand.muted),
+        highlight: .rgb(Brand.accent), highlightText: .rgb(0xFFFFFF), arrow: .rgb(Brand.accent),
+        row: .rgb(Brand.accent, alpha: 0.10))
     static let dark = CandidateTheme(
-        background: .rgb(0x25292B), border: .rgb(0x3B4144), text: .rgb(0xE6EAE8), label: .rgb(0x8E9894),
-        highlight: .rgb(0x13B57C), highlightText: .rgb(0xFFFFFF), arrow: .rgb(0x3CCB93),
-        row: .rgb(0x13B57C, alpha: 0.2))
+        background: .rgb(Brand.paperDark), border: .rgb(Brand.borderDark), text: .rgb(Brand.textDark),
+        label: .rgb(Brand.mutedDark), highlight: .rgb(Brand.accentDark), highlightText: .rgb(0xFFFFFF),
+        arrow: .rgb(Brand.accentDark), row: .rgb(Brand.accentDark, alpha: 0.16))
 
     static func matching(_ appearance: NSAppearance) -> CandidateTheme {
         appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
@@ -57,23 +57,23 @@ struct CandidateLayout {
         var leading = false
     }
 
-    static let cornerRadius: CGFloat = 12
-    static let cellRadius: CGFloat = 7
+    static let cornerRadius: CGFloat = 14
+    static let cellRadius: CGFloat = 9
     /// 框边到候选底
-    static let inset = NSSize(width: 7, height: 7)
+    static let inset = NSSize(width: 9, height: 8)
     /// 候选底到字
-    static let cellPadding = NSSize(width: 8, height: 4)
+    static let cellPadding = NSSize(width: 9, height: 5)
     /// 候选之间（左右、上下）
-    static let spacing: CGFloat = 2
+    static let spacing: CGFloat = 3
     /// 序号和词之间
     static let labelGap: CGFloat = 4
     /// 一个翻页箭头占的宽度；箭头和最后一个候选隔开 arrowGap
-    static let arrowWidth: CGFloat = 13
-    static let arrowGap: CGFloat = 4
+    static let arrowWidth: CGFloat = 14
+    static let arrowGap: CGFloat = 6
     /// 展开面板最底下放箭头的那一行有多高
     static let arrowRowHeight: CGFloat = 16
     /// 提示和候选之间
-    static let auxGap: CGFloat = 3
+    static let auxGap: CGFloat = 4
     /// 互译的原文最多显示这么多个字（太长只留后面的）
     static let maxSourceLength = 40
 
@@ -302,11 +302,22 @@ final class CandidateView: NSView {
         let panel = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5),
                                  xRadius: CandidateLayout.cornerRadius - 0.5,
                                  yRadius: CandidateLayout.cornerRadius - 0.5)
-        theme.background.setFill()
-        panel.fill()
+        // 暖纸底：上面亮一点、下面回到纸色，边上一条细线，顶上加一道很淡的高光
+        NSGraphicsContext.saveGraphicsState()
+        panel.addClip()
+        let top = theme.background.blended(withFraction: 0.28, of: .white) ?? theme.background
+        NSGradient(starting: top, ending: theme.background)?.draw(in: bounds, angle: -90)
+        NSGraphicsContext.restoreGraphicsState()
         theme.border.setStroke()
         panel.lineWidth = 1
         panel.stroke()
+        let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        NSColor.white.withAlphaComponent(dark ? 0.05 : 0.55).setStroke()
+        let shine = NSBezierPath()
+        shine.move(to: NSPoint(x: 16, y: 1.2))
+        shine.line(to: NSPoint(x: bounds.width - 16, y: 1.2))
+        shine.lineWidth = 1
+        shine.stroke()
 
         if let aux = layout.aux, let frame = layout.auxFrame {
             layout.auxContent(aux, color: theme.label).draw(at: frame.origin)
@@ -326,6 +337,12 @@ final class CandidateView: NSView {
             if cell.current {
                 theme.highlight.setFill()
                 roundedRect(cell.frame).fill()
+                NSColor.white.withAlphaComponent(0.16).setStroke()
+                let inside = NSBezierPath(roundedRect: cell.frame.insetBy(dx: 0.8, dy: 0.8),
+                                          xRadius: CandidateLayout.cellRadius - 0.8,
+                                          yRadius: CandidateLayout.cellRadius - 0.8)
+                inside.lineWidth = 1
+                inside.stroke()
             }
             let label: NSColor = !cell.showLabel ? .clear : cell.current ? theme.highlightText : theme.label
             let content = layout.content(label: cell.label, text: cell.text, comment: cell.comment, labelColor: label,
@@ -390,6 +407,16 @@ final class CandidatePanel {
     func hide() {
         layout = nil
         panel.orderOut(nil)
+    }
+
+    /// 调试/截图用：把候选框画成 PNG
+    func snapshot(to path: String) {
+        guard let layout,
+              let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+        view.layout = layout
+        view.cacheDisplay(in: view.bounds, to: rep)
+        guard let data = rep.representation(using: .png, properties: [:]) else { return }
+        try? data.write(to: URL(fileURLWithPath: path))
     }
 
     /// line 是输入框光标所在行的矩形（屏幕坐标，左下角为原点）；拿不到时是空矩形。

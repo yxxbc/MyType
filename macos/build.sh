@@ -55,7 +55,7 @@ printf 'APPL????' > "$app/Contents/PkgInfo"
 res="$app/Contents/Resources"
 # 图标是单色模板图（黑色 + 透明的矢量 PDF，icons/mytype/make-icons.swift 生成）：系统按菜单栏深浅色上色。
 # menu.pdf 16pt，菜单栏和输入法菜单用；caret@2x.pdf 是切换输入法时光标旁提示气泡里的锦鲤。
-cp icons/mytype/menu.pdf icons/mytype/caret@2x.pdf "$res/"
+cp icons/mytype/menu.pdf icons/mytype/caret@2x.pdf icons/mytype/github.png "$res/"
 # 应用图标：设置窗口（MyType --settings）在程序坞、关于窗口里用。源图 1024×1024，
 # 自己拼 .icns（scripts/make-icns.py），不依赖 iconutil——它偶尔会在整机层面失灵
 python3 scripts/make-icns.py icons/mytype/app-1024.png "$res/AppIcon.icns"
@@ -79,7 +79,7 @@ cp "$DATA/WUBI-AUTHORS" "$res/DATA-WUBI-AUTHORS"
 cp "$DATA/WUBI-SOURCE.txt" "$res/DATA-WUBI-SOURCE.txt"
 
 # 安装包里只能有这些文件（微信输入法的模型、HY-MT 翻译模型等都不许带）
-allowed='^(menu\.pdf|caret@2x\.pdf|AppIcon\.icns|[A-Za-z-]+\.lproj|[A-Za-z-]+\.lproj/InfoPlist\.strings|lexicon\.tsv|english\.txt|words\.lm|s2t\.tsv|OPENCC-LICENSE|DATA-LICENSE|DATA-SOURCE\.txt|DATA-VERSION|wubi86\.tsv|DATA-WUBI-LICENSE|DATA-WUBI-AUTHORS|DATA-WUBI-SOURCE\.txt)$'
+allowed='^(menu\.pdf|caret@2x\.pdf|github\.png|AppIcon\.icns|[A-Za-z-]+\.lproj|[A-Za-z-]+\.lproj/InfoPlist\.strings|lexicon\.tsv|english\.txt|words\.lm|s2t\.tsv|OPENCC-LICENSE|DATA-LICENSE|DATA-SOURCE\.txt|DATA-VERSION|wubi86\.tsv|DATA-WUBI-LICENSE|DATA-WUBI-AUTHORS|DATA-WUBI-SOURCE\.txt)$'
 bad=$(cd "$res" && find . -mindepth 1 | sed 's#^\./##' | grep -Ev "$allowed" || true)
 if [[ -n "$bad" ]]; then
   echo "安装包里有不该带的文件：" >&2

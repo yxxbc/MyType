@@ -22,6 +22,7 @@ MyType 的**代码**按 MIT 或 Apache License 2.0 双许可发布：
 | 简繁对照表 | `s2t.tsv` | [OpenCC](https://github.com/BYVoid/OpenCC) | Apache-2.0 | `OPENCC-LICENSE`（仓库里也有 `core/data/OPENCC-LICENSE`） |
 | Emoji 表 | `core/src/emoji/cldr.tsv` | Unicode emoji-test 18.0、Unicode CLDR 注释 | Unicode License v3 | 文件头有版权和许可链接 |
 | 图标 | `icons/mytype/app-source.png` 等 | 本项目生成 | 随代码按 MIT / Apache-2.0 发布 | — |
+| GitHub 猫标 | `icons/mytype/github.png` | GitHub, Inc. 的 Octocat 标志 | GitHub 的商标；只用在「关于」页链接到项目仓库，不表示 GitHub 认可本项目 | — |
 
 `lexicon.tsv` 的来源、版本和转换方式在 `dist/data/SOURCE.txt`（打包时复制成 `DATA-SOURCE.txt`）；
 `wubi86.tsv` 的来源、版本和转换方式在 `dist/data/WUBI-SOURCE.txt`（`DATA-WUBI-SOURCE.txt`）。

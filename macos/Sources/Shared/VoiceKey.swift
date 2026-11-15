@@ -20,9 +20,26 @@ public struct VoiceKey: Equatable, Sendable {
         self.name = name
     }
 
-    /// 这次 flagsChanged 里语音键是不是按着（rawFlags 是 NSEvent.modifierFlags.rawValue）
+    /// 这次 flagsChanged 里语音键是不是按着（rawFlags 是 NSEvent.modifierFlags.rawValue）。
+    /// 正常看分左右的设备位；有的应用/输入法桥会把设备位抹掉，只剩通用修饰位，
+    /// 这时按通用位判断（分不出左右，但至少能用）。
     public func isDown(rawFlags: UInt) -> Bool {
-        rawFlags & deviceMask != 0
+        guard deviceMask != 0 else { return false }
+        if rawFlags & deviceMask != 0 { return true }
+        let (sideBits, generic) = VoiceKey.modifierBits(for: keyCode)
+        if rawFlags & sideBits != 0 { return false }
+        return rawFlags & generic != 0
+    }
+
+    /// 这个修饰键左右两个设备位、和通用修饰位（NSEventModifierFlag*）
+    private static func modifierBits(for keyCode: UInt16) -> (UInt, UInt) {
+        switch keyCode {
+        case 0x3A, 0x3D: return (0x20 | 0x40, 1 << 19) // Option
+        case 0x3B, 0x3E: return (0x01 | 0x2000, 1 << 18) // Control
+        case 0x38, 0x3C: return (0x02 | 0x04, 1 << 17) // Shift（keyCode 0x3C 少见）
+        case 0x37, 0x36: return (0x08 | 0x10, 1 << 20) // Command
+        default: return (0, 0)
+        }
     }
 
     // 键码见 Carbon 的 Events.h（kVK_RightOption 等），分左右的位见 IOKit 的 NX_DEVICE*KEYMASK

@@ -73,6 +73,28 @@ func runKeyTests() {
         check(!press(c, .backspace), "没在打字时退格交给应用")
     }
 
+    // 语音键：右 Option 的分左右设备位在有的应用/输入法桥里会被抹掉，只剩通用 Option 位，
+    // 这时也要认成按下；左 Option 不能被认成右 Option。
+    do {
+        if let right = VoiceKey(name: "Alt_R") {
+            check(right.isDown(rawFlags: 0x40), "右 Option 的设备位算按下")
+            check(right.isDown(rawFlags: 0x80000), "右 Option 只剩通用位也算按下")
+            check(!right.isDown(rawFlags: 0x20), "左 Option 的设备位不算右 Option")
+            check(!right.isDown(rawFlags: 0x20 | 0x80000), "左 Option + 通用位不算右 Option")
+            check(!right.isDown(rawFlags: 0), "松开不算按下")
+        } else {
+            check(false, "Alt_R 在键表里")
+        }
+        if let left = VoiceKey(name: "Alt_L") {
+            check(left.isDown(rawFlags: 0x20), "左 Option 的设备位算按下")
+            check(left.isDown(rawFlags: 0x80000), "左 Option 只剩通用位也算按下")
+            check(!left.isDown(rawFlags: 0x40), "右 Option 的设备位不算左 Option")
+        }
+        if let f8 = VoiceKey(name: "F8") {
+            check(!f8.isDown(rawFlags: 0x80000), "F8 不是修饰键")
+        }
+    }
+
     // 单按 Shift：中 → 英 → 中，光标下面亮一下「英」「中」，一会儿收起
     do {
         let (c, f) = session()
@@ -330,7 +352,7 @@ private func panelDrawingTests() {
                                                               dy: CandidateLayout.inset.height - 0.5).contains($0.frame) }
             && (layout.auxFrame.map { bounds.contains($0) } ?? true)
         check(inside, "\(name)：候选、提示都在框里", "\(layout.size) \(layout.cells.map(\.frame))")
-        for (appearance, green) in [(NSAppearance.Name.aqua, CandidateTheme.light.highlight),
+        for (appearance, accent) in [(NSAppearance.Name.aqua, CandidateTheme.light.highlight),
                                     (.darkAqua, CandidateTheme.dark.highlight)] {
             let view = CandidateView(frame: bounds)
             view.appearance = NSAppearance(named: appearance)
@@ -345,11 +367,11 @@ private func panelDrawingTests() {
             let sample = highlighted.map { NSPoint(x: $0.frame.minX + 3, y: $0.frame.midY) }
             let pixel = sample.flatMap { rep.colorAt(x: Int($0.x * scale), y: Int($0.y * scale)) }?
                 .usingColorSpace(.sRGB)
-            let target = green.usingColorSpace(.sRGB)!
+            let target = accent.usingColorSpace(.sRGB)!
             let close = pixel.map { abs($0.redComponent - target.redComponent) < 0.03
                 && abs($0.greenComponent - target.greenComponent) < 0.03
                 && abs($0.blueComponent - target.blueComponent) < 0.03 } ?? (highlighted == nil)
-            check(close, "\(name)（\(appearance == .aqua ? "浅色" : "深色")）：高亮格子画成主题绿", "\(String(describing: pixel))")
+            check(close, "\(name)（\(appearance == .aqua ? "浅色" : "深色")）：高亮格子画成主题色", "\(String(describing: pixel))")
         }
         c.commitComposition(c.fake)
     }

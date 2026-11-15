@@ -284,6 +284,32 @@ func voiceTest(_ wav: String) -> Bool {
     return false
 }
 
+/// 调试用：把候选框画成 PNG
+func candidateShot() -> Bool {
+    let panel = AppState.shared.candidatePanel
+    panel.onScreen = false
+    let page = CandidatePage(texts: ["这是我的输入法很高兴与你见面", "这是我的"], cursor: 0,
+                             hasPrev: false, hasNext: true, expanded: false)
+    panel.show(page, below: NSRect(x: 300, y: 600, width: 2, height: 18))
+    panel.snapshot(to: "/tmp/mytype-candidate.png")
+    return true
+}
+
+/// 调试用：把语音浮层三种状态画成 PNG
+func voicePanelShot() -> Bool {
+    let panel = VoicePanel()
+    panel.onScreen = false
+    let line = NSRect(x: 200, y: 600, width: 2, height: 18)
+    panel.show(.listening(levels: [30, 65, 90, 40, 70, 20], text: "这是一个测试"), below: line)
+    panel.snapshot(to: "/tmp/mytype-voice-listening.png")
+    panel.show(.thinking(text: "这是一个测试"), below: line)
+    panel.snapshot(to: "/tmp/mytype-voice-thinking.png")
+    panel.show(.message(text: "麦克风没打开：系统设置 → 隐私与安全性 → 麦克风，打开 MyType", error: true),
+               below: line)
+    panel.snapshot(to: "/tmp/mytype-voice-message.png")
+    return true
+}
+
 let arguments = CommandLine.arguments
 if arguments.count > 1 {
     let ok: Bool
@@ -294,6 +320,11 @@ if arguments.count > 1 {
     case "--disable": ok = Installer.disable()
     case "--selftest": ok = selfTest()
     case "--settings": SettingsApp.run(page: arguments.count > 2 ? arguments[2] : nil)
+    case "--settings-shot":
+        SettingsApp.snapshot(page: arguments.count > 3 ? arguments[3] : nil,
+                             to: arguments.count > 2 ? arguments[2] : "/tmp/mytype-settings.png")
+    case "--candidate-shot": ok = candidateShot()
+    case "--voice-panel-shot": ok = voicePanelShot()
     case "--install-lexicon", "--use-lexicon": ok = lexiconCommand(Array(arguments.dropFirst()))
     case "--download-model": ok = downloadModelCommand(accepted: arguments.contains("--accept-license"))
     case "--install-voice-model", "--remove-voice-model": ok = voiceModelCommand(Array(arguments.dropFirst()))

@@ -18,23 +18,27 @@ private extension Color {
 
 private struct Palette {
     let dark: Bool
-    static let green = Color(hex: 0x0EAF76)
+    /// 朱砂色；没有环境可取的静态上下文用 accentLight
+    var accent: Color { dark ? Color(hex: Brand.accentDark) : Color(hex: Brand.accent) }
+    static let accentLight = Color(hex: Brand.accent)
 
     var sidebar: LinearGradient {
         let stops: [Gradient.Stop] = dark
-            ? [.init(color: Color(hex: 0x17332A), location: 0), .init(color: Color(hex: 0x1C2A25), location: 0.45),
-               .init(color: Color(hex: 0x202523), location: 1)]
-            : [.init(color: Color(hex: 0xD9F3E6), location: 0), .init(color: Color(hex: 0xE9F8F0), location: 0.4),
-               .init(color: Color(hex: 0xF5FBF8), location: 1)]
+            ? [.init(color: Color(hex: Brand.sidebarTopDark), location: 0),
+               .init(color: Color(hex: 0x23251F), location: 0.45),
+               .init(color: Color(hex: Brand.sidebarBottomDark), location: 1)]
+            : [.init(color: Color(hex: Brand.sidebarTop), location: 0),
+               .init(color: Color(hex: 0xF8F1E7), location: 0.4),
+               .init(color: Color(hex: Brand.sidebarBottom), location: 1)]
         return LinearGradient(gradient: Gradient(stops: stops), startPoint: .top, endPoint: .bottom)
     }
-    var content: Color { dark ? Color(hex: 0x1D201F) : Color(hex: 0xF5F7F6) }
-    var card: Color { dark ? Color(hex: 0x282C2A) : .white }
-    var cardBorder: Color { dark ? Color(hex: 0x3B4144) : Color(hex: 0xE6EAE8) }
+    var content: Color { dark ? Color(hex: Brand.contentDark) : Color(hex: Brand.content) }
+    var card: Color { dark ? Color(hex: Brand.cardDark) : Color(hex: Brand.card) }
+    var cardBorder: Color { dark ? Color(hex: Brand.borderDark) : Color(hex: Brand.border) }
     var nested: Color { dark ? Color.white.opacity(0.03) : Color.black.opacity(0.025) }
-    var heading: Color { dark ? Color(hex: 0xA3ACA8) : Color(hex: 0x6B7570) }
-    var hover: Color { Palette.green.opacity(dark ? 0.12 : 0.10) }
-    var warning: Color { dark ? Color(hex: 0xF8C66D) : Color(hex: 0xB86E00) }
+    var heading: Color { dark ? Color(hex: Brand.mutedDark) : Color(hex: Brand.muted) }
+    var hover: Color { accent.opacity(dark ? 0.14 : 0.10) }
+    var warning: Color { dark ? Color(hex: Brand.warningDark) : Color(hex: Brand.warning) }
 }
 
 private struct PaletteKey: EnvironmentKey {
@@ -61,8 +65,13 @@ struct SettingsView: View {
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 26) {
-                    Text(model.page.title)
-                        .font(.system(size: 26, weight: .heavy))
+                    HStack(spacing: 12) {
+                        RoundedRectangle(cornerRadius: 2, style: .continuous)
+                            .fill(palette.accent)
+                            .frame(width: 4, height: 26)
+                        Text(model.page.title)
+                            .font(.system(size: 26, weight: .heavy))
+                    }
                     page
                 }
                 .padding(.horizontal, 32)
@@ -98,13 +107,14 @@ private struct Sidebar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 10) {
+            HStack(spacing: 11) {
                 Image(nsImage: NSApp.applicationIconImage)
                     .resizable()
-                    .frame(width: 36, height: 36)
+                    .frame(width: 40, height: 40)
+                    .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("MyType").font(.system(size: 17, weight: .heavy))
-                    Text("设置").font(.caption).foregroundColor(.secondary)
+                    Text("本地输入法").font(.caption).foregroundColor(.secondary)
                 }
             }
             .padding(.horizontal, 22)
@@ -114,6 +124,13 @@ private struct Sidebar: View {
                 NavRow(page: page, selected: model.page == page) { model.page = page }
             }
             Spacer()
+            VStack(alignment: .leading, spacing: 2) {
+                Text("MyType \(appVersion)").font(.system(size: 10.5, weight: .medium))
+                Text("本地运行 · 打字不联网").font(.system(size: 10.5))
+            }
+            .foregroundColor(.secondary.opacity(0.8))
+            .padding(.horizontal, 22)
+            .padding(.bottom, 14)
         }
         .frame(width: 210)
         .frame(maxHeight: .infinity)
@@ -141,7 +158,7 @@ private struct NavRow: View {
         .padding(.vertical, 9)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(selected ? Palette.green : (hovering ? palette.hover : .clear))
+                .fill(selected ? palette.accent : (hovering ? palette.hover : .clear))
         )
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
@@ -163,7 +180,7 @@ private struct ToastView: View {
                     if let title = toast.actionTitle {
                         Button(title) { model.runToastAction() }
                             .buttonStyle(.borderless)
-                            .foregroundColor(Color(hex: 0x3CCB93))
+                            .foregroundColor(Palette.accentLight)
                             .font(.body.weight(.semibold))
                     }
                 }
@@ -545,7 +562,9 @@ private struct VoicePage: View {
                 } else if ready {
                     IconButton(symbol: "trash", help: "删除语音模型（语音输入会关掉）") { model.removeVoiceModel() }
                 } else {
-                    Button(model.voiceError == nil ? "下载" : "重试") { model.downloadVoiceModel() }
+                    Button { model.downloadVoiceModel() } label: {
+                        Label(model.voiceError == nil ? "下载" : "重试", systemImage: "arrow.down.circle")
+                    }
                 }
             }
             .rowPadding()
@@ -562,8 +581,10 @@ private struct VoicePage: View {
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                 } else {
-                    Button("测试") { model.testMicrophone() }
-                        .disabled(!ready || !model.config.voice)
+                    Button { model.testMicrophone() } label: {
+                        Label("测试", systemImage: "mic.fill")
+                    }
+                    .disabled(!ready || !model.config.voice)
                 }
             }
             .rowPadding()
@@ -740,7 +761,7 @@ private struct LocalModelRow: View {
                 Button("取消") { model.cancelLocalDownload() }
             } else if plan.ready {
                 Label("已就绪", systemImage: "checkmark.circle.fill")
-                    .foregroundColor(Palette.green)
+                    .foregroundColor(palette.accent)
             } else if plan.canDownload {
                 Text("要下载 \(LocalModel.sizeText(plan.bytes))")
                     .foregroundColor(.secondary)
@@ -795,7 +816,7 @@ private struct WordsPage: View {
                         .font(.system(size: 13, weight: .bold))
                         .foregroundColor(.white)
                         .frame(width: 26, height: 26)
-                        .background(Circle().fill(model.canAddWord ? Palette.green : Color.gray.opacity(0.4)))
+                        .background(Circle().fill(model.canAddWord ? palette.accent : Color.gray.opacity(0.4)))
                 }
                 .buttonStyle(.plain)
                 .disabled(!model.canAddWord)
@@ -947,7 +968,10 @@ private struct PrefGroup<Content: View, Trailing: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center) {
+            HStack(alignment: .center, spacing: 7) {
+                Circle()
+                    .fill(palette.accent)
+                    .frame(width: 5, height: 5)
                 Text(title)
                     .font(.system(size: 13, weight: .bold))
                     .foregroundColor(palette.heading)
@@ -966,8 +990,9 @@ private struct PrefGroup<Content: View, Trailing: View>: View {
             }
             VStack(spacing: 0) { content }
                 .background(palette.card)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(palette.cardBorder, lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.cardBorder, lineWidth: 1))
+                .shadow(color: .black.opacity(palette.dark ? 0.18 : 0.045), radius: 10, y: 2)
         }
     }
 }
@@ -989,8 +1014,8 @@ private struct RowDivider: View {
 private extension View {
     func rowPadding() -> some View {
         padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .frame(minHeight: 46)
+            .padding(.vertical, 11)
+            .frame(minHeight: 48)
     }
 }
 
@@ -1047,6 +1072,7 @@ private struct SwitchRow: View {
     var info: String?
     @Binding var isOn: Bool
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.palette) private var palette
 
     var body: some View {
         HStack(spacing: 12) {
@@ -1055,7 +1081,7 @@ private struct SwitchRow: View {
             Toggle("", isOn: $isOn)
                 .labelsHidden()
                 .toggleStyle(.switch)
-                .tint(Palette.green)
+                .tint(palette.accent)
         }
         .rowPadding()
         .contentShape(Rectangle())
@@ -1115,12 +1141,13 @@ private struct RadioRow<Trailing: View>: View {
     let action: () -> Void
     @ViewBuilder var trailing: Trailing
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.palette) private var palette
 
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: selected ? "largecircle.fill.circle" : "circle")
                 .font(.system(size: 16))
-                .foregroundColor(selected ? Palette.green : .secondary)
+                .foregroundColor(selected ? palette.accent : .secondary)
             RowLabel(title: title, subtitle: subtitle, subtitleColor: subtitleColor)
             if let info { InfoButton(info) }
             trailing
@@ -1172,7 +1199,7 @@ private struct ExpanderRow<Content: View>: View {
                     }))
                     .labelsHidden()
                     .toggleStyle(.switch)
-                    .tint(Palette.green)
+                    .tint(palette.accent)
                 }
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .semibold))
@@ -1233,6 +1260,37 @@ private struct EntryRow<Field: View>: View {
 // MARK: 关于
 
 /// 设置侧栏「关于」：版本、检查更新（发布页 302，不用 API）、下载并安装、链接和许可。
+/// GitHub 的猫标（Octicons，MIT；打包在 Resources/github.png）
+private struct GitHubMark: View {
+    var body: some View {
+        Image(nsImage: NSImage(named: "github") ?? NSImage())
+            .resizable()
+            .interpolation(.high)
+            .frame(width: 17, height: 17)
+            .opacity(0.9)
+    }
+}
+
+private struct LinkRow<Icon: View>: View {
+    let title: String
+    let subtitle: String
+    let action: () -> Void
+    @ViewBuilder let icon: Icon
+
+    var body: some View {
+        HStack(spacing: 12) {
+            icon
+                .frame(width: 18, height: 18)
+            RowLabel(title: title, subtitle: subtitle)
+            Image(systemName: "arrow.up.right.square")
+                .foregroundColor(.secondary)
+        }
+        .rowPadding()
+        .contentShape(Rectangle())
+        .onTapGesture(perform: action)
+    }
+}
+
 private struct AboutPage: View {
     @ObservedObject var model: SettingsModel
     @Environment(\.palette) private var palette
@@ -1263,14 +1321,20 @@ private struct AboutPage: View {
             RowDivider()
             ActionRow(title: "最新版本", subtitle: updateSubtitle) {
                 HStack(spacing: 8) {
-                    Button("检查更新") { model.checkUpdates(manual: true) }
-                        .disabled(model.updateChecking || model.updateInstalling)
+                    Button { model.checkUpdates(manual: true) } label: {
+                        Label("检查更新", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    .disabled(model.updateChecking || model.updateInstalling)
                     if model.updateLatest != nil {
-                        Button("下载并安装") { model.updateNow() }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(model.updateInstalling)
+                        Button { model.updateNow() } label: {
+                            Label("下载并安装", systemImage: "arrow.down.circle.fill")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(model.updateInstalling)
                     } else {
-                        Button("打开发布页") { model.openReleasePage() }
+                        Button { model.openReleasePage() } label: {
+                            Label("打开发布页", systemImage: "safari")
+                        }
                     }
                 }
             }
@@ -1297,19 +1361,23 @@ private struct AboutPage: View {
 
     private var linksGroup: some View {
         PrefGroup("链接") {
-            ActionRow(title: "项目主页", subtitle: "github.com/\(Update.repo)",
-                      action: { open("https://github.com/\(Update.repo)") }) {
-                Image(systemName: "arrow.up.right.square").foregroundColor(.secondary)
+            LinkRow(title: "项目主页", subtitle: "github.com/\(Update.repo)",
+                    action: { open("https://github.com/\(Update.repo)") }) {
+                GitHubMark()
             }
             RowDivider()
-            ActionRow(title: "问题反馈", subtitle: "github.com/\(Update.repo)/issues",
-                      action: { open("https://github.com/\(Update.repo)/issues") }) {
-                Image(systemName: "arrow.up.right.square").foregroundColor(.secondary)
+            LinkRow(title: "问题反馈", subtitle: "github.com/\(Update.repo)/issues",
+                    action: { open("https://github.com/\(Update.repo)/issues") }) {
+                Image(systemName: "exclamationmark.bubble")
+                    .font(.system(size: 15))
+                    .foregroundColor(.secondary)
             }
             RowDivider()
-            ActionRow(title: "更新记录", subtitle: "github.com/\(Update.repo)/releases",
-                      action: { open("https://github.com/\(Update.repo)/releases") }) {
-                Image(systemName: "arrow.up.right.square").foregroundColor(.secondary)
+            LinkRow(title: "更新记录", subtitle: "github.com/\(Update.repo)/releases",
+                    action: { open("https://github.com/\(Update.repo)/releases") }) {
+                Image(systemName: "tag")
+                    .font(.system(size: 15))
+                    .foregroundColor(.secondary)
             }
         }
     }

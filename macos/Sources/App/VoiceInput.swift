@@ -11,10 +11,17 @@ import AVFoundation
 import Carbon
 import CMyType
 
+/// 语音浮层要画什么
+enum VoicePresentation: Equatable {
+    case hidden
+    case listening(levels: [Int], text: String)
+    case thinking(text: String)
+    case message(text: String, error: Bool)
+}
+
 /// 语音输入要在哪个输入框里显示、上屏（MyTypeInputController 实现）。
 protocol VoiceHost: AnyObject {
-    /// status 是候选框里的提示（nil 收起），partial 是编辑区里识别到一半的字
-    func voiceShow(status: String?, partial: String)
+    func voiceShow(_ presentation: VoicePresentation)
     func voiceCommit(_ text: String)
 }
 
@@ -36,7 +43,23 @@ final class VoiceInput {
     private var showing = false
     private var timer: Timer?
     private var levels: [Int] = []
-    private var frame = 0
+    /// 排查用：设 MYTYPE_VOICE_DEBUG=1 时把语音键/权限/电平写到 /tmp/mytype-voice.log
+    static let debugEnabled = ProcessInfo.processInfo.environment["MYTYPE_VOICE_DEBUG"] == "1"
+    private var lastLog: TimeInterval = 0
+
+    private func vlog(_ s: @autoclosure () -> String) {
+        guard Self.debugEnabled else { return }
+        let line = "\(Date().timeIntervalSince1970) [\(getpid())] \(s())\n"
+        guard let data = line.data(using: .utf8) else { return }
+        let path = "/tmp/mytype-voice.log"
+        if let fh = FileHandle(forWritingAtPath: path) {
+            fh.seekToEndOfFile()
+            fh.write(data)
+            try? fh.close()
+        } else {
+            try? data.write(to: URL(fileURLWithPath: path))
+        }
+    }
     /// 出错或提示时留到这个时候再收起
     private var holdUntil: TimeInterval = 0
 
@@ -53,9 +76,15 @@ final class VoiceInput {
         if key != nil && handle == nil {
             handle = mytype_voice_new(modelDir)
         }
+        vlog("configure voice=\(config.voice) key=\(config.voiceKey) model=\(modelDir) ready=\(VoiceModelInstaller.isReady(URL(fileURLWithPath: modelDir))) handle=\(handle != nil)")
     }
 
     var isActive: Bool { showing }
+
+    /// 所有 flagsChanged 都记一笔，排查用
+    func debugFlags(keyCode: UInt16, rawFlags: UInt) {
+        vlog("flags key=0x\(String(keyCode, radix: 16)) raw=0x\(String(rawFlags, radix: 16))")
+    }
 
     /// flagsChanged：语音键是修饰键（右 Option 等）时看它按下 / 松开。修饰键照样交给应用，所以不返回吃没吃。
     func flagsChanged(keyCode: UInt16, rawFlags: UInt, composing: Bool, host: VoiceHost) {
@@ -68,7 +97,7 @@ final class VoiceInput {
 
     /// keyDown / keyUp。返回 true 表示吃掉了这个键。
     func keyEvent(keyCode: UInt16, up: Bool, composing: Bool, host: VoiceHost) -> Bool {
-        if let key, !key.isModifier, keyCode == key.keyCode {
+        if let key, keyCode == key.keyCode {
             return press(down: !up, composing: composing, host: host)
         }
         if !up { pendingHint = false }
@@ -93,7 +122,12 @@ final class VoiceInput {
     }
 
     private func press(down: Bool, composing: Bool, host: VoiceHost) -> Bool {
-        guard let handle, let key else { return false }
+        guard let handle, let key else {
+            vlog("press down=\(down) 没 handle/key")
+            return false
+        }
+        let auth = AVCaptureDevice.authorizationStatus(for: .audio).rawValue
+        vlog("press down=\(down) auth=\(auth) ready=\(VoiceModelInstaller.isReady(URL(fileURLWithPath: modelDir))) key=\(key.name) keyDown=\(keyDown) showing=\(showing) composing=\(composing) model=\(modelDir)")
         if !VoiceModelInstaller.isReady(URL(fileURLWithPath: modelDir)) {
             // 还没下载模型：不碰麦克风（不弹权限框），只提示去设置里下载（提示文字是核心给的）
             if down {
@@ -129,13 +163,18 @@ final class VoiceInput {
         if showing && self.host !== host { cancel() }
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .authorized:
+            vlog("auth authorized")
             break
         case .notDetermined:
             // 第一次用：系统弹窗问要不要允许，同意以后再按一次
-            AVCaptureDevice.requestAccess(for: .audio) { _ in }
+            vlog("auth notDetermined, requestAccess")
+            AVCaptureDevice.requestAccess(for: .audio) { ok in
+                DispatchQueue.main.async { self.vlog("requestAccess result=\(ok)") }
+            }
             hint("请允许 MyType 使用麦克风，然后再按一次语音键", host: host)
             return true
         default:
+            vlog("auth denied/restricted=\(auth)")
             hint("麦克风没打开：系统设置 → 隐私与安全性 → 麦克风，打开 MyType", host: host)
             return true
         }
@@ -144,7 +183,6 @@ final class VoiceInput {
             self.host = host
             showing = true
             levels = []
-            frame = 0
             holdUntil = 0
         }
         mytype_voice_key_down(handle)
@@ -154,11 +192,12 @@ final class VoiceInput {
     }
 
     private func hint(_ text: String, host: VoiceHost) {
+        vlog("hint: \(text)")
         if showing && self.host !== host { cancel() }
         self.host = host
         showing = true
         holdUntil = ProcessInfo.processInfo.systemUptime + 4
-        host.voiceShow(status: "🎙 " + text, partial: "")
+        host.voiceShow(.message(text: text, error: true))
         startTimer()
     }
 
@@ -190,16 +229,24 @@ final class VoiceInput {
         let now = ProcessInfo.processInfo.systemUptime
         switch phase {
         case Int(MYTYPE_VOICE_LISTENING):
-            levels.append(Int(mytype_voice_level(handle)))
+            let level = Int(mytype_voice_level(handle))
+            if now - lastLog > 0.5 {
+                lastLog = now
+                vlog("listening level=\(level) text=\(text)")
+            }
+            levels.append(level)
             if levels.count > 6 { levels.removeFirst() }
-            host.voiceShow(status: "🎙 " + voiceWave(levels), partial: text)
+            host.voiceShow(.listening(levels: levels, text: text))
             return true
         case Int(MYTYPE_VOICE_RECOGNIZING):
-            let dots = ["·    ", "··   ", "···  ", "···· ", "·····"]
-            host.voiceShow(status: "🎙 " + dots[(frame / 3) % dots.count], partial: text)
-            frame += 1
+            if now - lastLog > 0.5 {
+                lastLog = now
+                vlog("recognizing text=\(text)")
+            }
+            host.voiceShow(.thinking(text: text))
             return true
         case Int(MYTYPE_VOICE_RESULT):
+            vlog("result: \(text)")
             finish()
             host.voiceCommit(text)
             // 上屏以后再复制；密码框里（开了安全输入）说的话不进剪贴板
@@ -209,8 +256,9 @@ final class VoiceInput {
             }
             return false
         case Int(MYTYPE_VOICE_ERROR):
+            vlog("error: \(text)")
             NSLog("MyType: 语音 %@", text)
-            host.voiceShow(status: "🎙 " + text, partial: "")
+            host.voiceShow(.message(text: text, error: true))
             // 没下载模型的提示要去设置里操作，多留一会儿
             let missing = Int(mytype_voice_model_state(handle)) == Int(MYTYPE_VOICE_MODEL_MISSING)
             holdUntil = now + (missing ? 4 : 1.5)
@@ -223,11 +271,12 @@ final class VoiceInput {
     }
 
     private func finish() {
+        vlog("finish showing=\(showing) keyDown=\(keyDown)")
         stopTimer()
         keyDown = false
         if showing {
             showing = false
-            host?.voiceShow(status: nil, partial: "")
+            host?.voiceShow(.hidden)
         }
         host = nil
     }

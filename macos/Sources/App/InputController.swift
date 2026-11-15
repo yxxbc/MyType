@@ -33,6 +33,8 @@ class MyTypeInputController: IMKInputController {
     /// 切中 / 英 / 译以后在光标下面亮一下的提示，到时间收起（和以前提示一样）
     private var modeHintTimer: Timer?
     static let modeHintDuration: TimeInterval = 1
+    /// 语音输入时那个麦克风/波形浮层（和候选框分开）
+    private lazy var voicePanel = VoicePanel()
 
     override init!(server: IMKServer!, delegate: Any!, client inputClient: Any!) {
         super.init(server: server, delegate: delegate, client: inputClient)
@@ -96,6 +98,7 @@ class MyTypeInputController: IMKInputController {
     private func handleKey(_ event: NSEvent) -> Bool {
         switch event.type {
         case .flagsChanged:
+            VoiceInput.shared.debugFlags(keyCode: event.keyCode, rawFlags: event.modifierFlags.rawValue)
             VoiceInput.shared.flagsChanged(keyCode: event.keyCode, rawFlags: event.modifierFlags.rawValue,
                                            composing: composer.isComposing, host: self)
             handleFlags(event)
@@ -264,13 +267,18 @@ extension MyTypeInputController: TextClient {
         modeHintTimer?.invalidate()
         modeHintTimer = nil
         let panel = AppState.shared.candidatePanel
-        guard let page, let client = textInput else {
+        guard let page, textInput != nil else {
             panel.hide()
             return
         }
+        panel.show(page, below: caretLine())
+    }
+
+    /// 光标所在那一行（屏幕坐标）；应用给不出时是空矩形。
+    private func caretLine() -> NSRect {
         var line = NSRect.zero
-        client.attributes(forCharacterIndex: 0, lineHeightRectangle: &line)
-        panel.show(page, below: line)
+        textInput?.attributes(forCharacterIndex: 0, lineHeightRectangle: &line)
+        return line
     }
 
     /// 切到中 / 英 / 译以后在光标下面亮一下「中」「英」「译 中→英」，过一会儿收起；还有没上屏的字时不画
@@ -325,17 +333,29 @@ let appVersion = (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersion
 // MARK: 语音输入
 
 extension MyTypeInputController: VoiceHost {
-    func voiceShow(status: String?, partial: String) {
-        setMarkedText(partial, cursor: partial.utf16.count)
-        guard let status else {
+    func voiceShow(_ presentation: VoicePresentation) {
+        switch presentation {
+        case .hidden:
+            setMarkedText("", cursor: 0)
+            voicePanel.hide()
             showCandidates(nil)
-            return
+        case .listening(let levels, let text):
+            setMarkedText(text, cursor: text.utf16.count)
+            showCandidates(nil)
+            voicePanel.show(.listening(levels: levels, text: text), below: caretLine())
+        case .thinking(let text):
+            setMarkedText(text, cursor: text.utf16.count)
+            showCandidates(nil)
+            voicePanel.show(.thinking(text: text), below: caretLine())
+        case .message(let text, let error):
+            setMarkedText("", cursor: 0)
+            showCandidates(nil)
+            voicePanel.show(.message(text: text, error: error), below: caretLine())
         }
-        showCandidates(CandidatePage(texts: [], cursor: -1, hasPrev: false, hasNext: false, expanded: false,
-                                     aux: status))
     }
 
     func voiceCommit(_ text: String) {
+        voicePanel.hide()
         setMarkedText("", cursor: 0)
         showCandidates(nil)
         guard !text.isEmpty else { return }

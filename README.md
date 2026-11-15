@@ -80,7 +80,7 @@ curl -fsSL https://raw.githubusercontent.com/yxxbc/MyType/main/install.sh | bash
 
 相对上游 WowType 0.4.0：
 
-| | 上游 0.4.0 | 这里 0.6.2 |
+| | 上游 0.4.0 | 这里 0.6.3 |
 |---|---:|---:|
 | `--selftest` 峰值内存（万象 174 万条 + 语言模型） | 880 MB | **188 MB** |
 | 词库常驻（单独测） | 590 MB | **39 MB** |
@@ -108,10 +108,10 @@ export PATH="$HOME/.cargo/bin:$PATH"
 scripts/make-data.sh     # 雾凇词库 + english.txt + words.lm（联网下载，约一分钟）
 scripts/make-wubi.sh     # 五笔 86 码表
 macos/build.sh dist/data dist/macos
-macos/install.sh dist/macos/MyType-0.6.2-macos.zip
+macos/install.sh dist/macos/MyType-0.6.3-macos.zip
 ```
 
-产物在 `dist/macos/`：`MyType.app`、`MyType-0.6.2-macos.zip`、`MyType-0.6.2-macos.pkg`。
+产物在 `dist/macos/`：`MyType.app`、`MyType-0.6.3-macos.zip`、`MyType-0.6.3-macos.pkg`。
 
 测试：
 
@@ -127,8 +127,8 @@ macos/ShellTests/run.sh dist/data   # 有词库数据时
 跑测试、打 pkg/zip、写 `SHA256SUMS`，然后发 GitHub Release。
 
 ```sh
-git tag v0.6.2
-git push origin v0.6.2
+git tag v0.6.3
+git push origin v0.6.3
 ```
 
 也可以在 Actions → Release → Run workflow 填一个已有的 tag；`dry_run` 默认只构建并上传 Actions artifact，
@@ -158,7 +158,7 @@ git push origin v0.6.2
 <details>
 <summary>相对上游的其它改动</summary>
 
-| 项目 | 上游 0.4.0 | 这里 0.6.2 |
+| 项目 | 上游 0.4.0 | 这里 0.6.3 |
 |---|---|---|
 | 名字 / bundle id / 设置文件 | WowType / `io.github.gloridust…` / `wowtype.conf` | **MyType / `io.github.yxxbc.inputmethod.MyType` / `mytype.conf`** |
 | 版本 | 0.4.0 | 从 **0.5.0** 起自己编 |

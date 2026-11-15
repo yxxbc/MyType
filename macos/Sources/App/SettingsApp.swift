@@ -36,6 +36,20 @@ enum SettingsApp {
         }
     }
 
+    /// 调试用：开设置窗口，等 SwiftUI 画好后把内容存成 PNG，然后退出。
+    static func snapshot(page: String?, to path: String) -> Never {
+        let app = NSApplication.shared
+        let delegate = SettingsAppDelegate(page: page.flatMap(SettingsPage.init(rawValue:)) ?? .general)
+        app.delegate = delegate
+        app.setActivationPolicy(.regular)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            delegate.snapshot(to: path)
+            exit(0)
+        }
+        app.run()
+        exit(0)
+    }
+
     /// `MyType --settings [general|input|emoji|words]`：设置窗口进程，关掉窗口就退出。
     static func run(page: String?) -> Never {
         let app = NSApplication.shared
@@ -106,6 +120,15 @@ final class SettingsAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
 
     @objc private func didBecomeActive(_ notification: Notification) {
         model.reload()
+    }
+
+    func snapshot(to path: String) {
+        window.displayIfNeeded()
+        guard let view = window.contentView,
+              let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        guard let data = rep.representation(using: .png, properties: [:]) else { return }
+        try? data.write(to: URL(fileURLWithPath: path))
     }
 
     // MARK: 菜单
