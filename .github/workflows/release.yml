@@ -98,8 +98,11 @@ jobs:
 
       - name: 测试
         timeout-minutes: 25
+        env:
+          # 测试不需要 LTO；下一步的正式包还是 Cargo.toml 里的 release 配置
+          CARGO_PROFILE_RELEASE_LTO: "false"
         run: |
-          cargo test --release --locked -p mytype-core --lib
+          cargo test --locked -p mytype-core --lib
           macos/test.sh
           macos/ShellTests/run.sh dist/data
 
