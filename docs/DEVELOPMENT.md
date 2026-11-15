@@ -12,10 +12,10 @@ export PATH="$HOME/.cargo/bin:$PATH"
 scripts/make-data.sh     # 雾凇词库 + english.txt + words.lm（联网下载，约一分钟）
 scripts/make-wubi.sh     # 五笔 86 码表
 macos/build.sh dist/data dist/macos
-macos/install.sh dist/macos/MyType-0.6.3-macos.zip
+macos/install.sh dist/macos/MyType-0.6.4-macos.zip
 ```
 
-产物在 `dist/macos/`：`MyType.app`、`MyType-0.6.3-macos.zip`、`MyType-0.6.3-macos.pkg`。
+产物在 `dist/macos/`：`MyType.app`、`MyType-0.6.4-macos.zip`、`MyType-0.6.4-macos.pkg`。
 
 ## 测试
 
@@ -31,8 +31,8 @@ macos/ShellTests/run.sh dist/data   # 有词库数据时
 跑测试、打 pkg/zip、写 `SHA256SUMS`，然后发 GitHub Release。
 
 ```sh
-git tag v0.6.3
-git push origin v0.6.3
+git tag v0.6.4
+git push origin v0.6.4
 ```
 
 也可以在 Actions → Release → Run workflow 填一个已有的 tag；`dry_run` 默认只构建并上传 Actions artifact，
@@ -54,7 +54,7 @@ fcitx5 插件、Linux 设置界面和 `wowtype-config`、Nix/deb/rpm 打包、GN
 从 [Gloridust/WowType](https://github.com/Gloridust/WowType) 0.4.0（commit `d145a93`）分出来，之后不跟上游同步，自己走。
 代码许可照旧（[MIT](../LICENSE-MIT) / [Apache-2.0](../LICENSE-APACHE)），原作者是 Gloridust。
 
-| 项目 | 上游 0.4.0 | 这里 0.6.3 |
+| 项目 | 上游 0.4.0 | 这里 0.6.4 |
 |---|---|---|
 | 名字 / bundle id / 设置文件 | WowType / `io.github.gloridust…` / `wowtype.conf` | **MyType / `io.github.yxxbc.inputmethod.MyType` / `mytype.conf`** |
 | 版本 | 0.4.0 | 从 **0.5.0** 起自己编 |
