@@ -6,6 +6,7 @@
 
 import AppKit
 import AVFoundation
+import CMyType
 
 enum SettingsPage: String, CaseIterable, Identifiable {
     case general, input, emoji, voice, translate, words, about
@@ -445,6 +446,10 @@ final class SettingsModel: ObservableObject {
     @Published private(set) var voiceProgress: (Int64, Int64)?
     @Published private(set) var voiceError: String?
     @Published private var voiceRevision = 0
+    /// 麦克风测试：正在录、上次结果；权限变化时用 revision 让界面刷新
+    @Published private(set) var voiceTesting = false
+    @Published private(set) var voiceTestText: String?
+    @Published private(set) var voicePermissionRevision = 0
     private var voiceControl: DownloadControl?
     var voiceBusy: Bool { voiceProgress != nil }
 
@@ -475,6 +480,89 @@ final class SettingsModel: ObservableObject {
         return "要下载 \(LocalModel.sizeText(VoiceModelInstaller.size))，解开后约 130 MB"
     }
 
+    /// 麦克风权限的文字（第一次、已允许、被拒绝）
+    var voicePermissionText: String {
+        _ = voicePermissionRevision
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized: return "已允许"
+        case .denied: return "被拒绝：系统设置 → 隐私与安全性 → 麦克风，打开 MyType"
+        case .restricted: return "被系统限制"
+        case .notDetermined: return "还没问过（点「测试」会问）"
+        @unknown default: return "未知"
+        }
+    }
+
+    /// 用麦克风录 3 秒，走和输入法一样的核心识别，把结果写在「上次测试」里。
+    func testMicrophone() {
+        guard !voiceTesting, voiceModelReady else { return }
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            break
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .audio) { granted in
+                DispatchQueue.main.async {
+                    self.voicePermissionRevision += 1
+                    self.showToast(granted ? "麦克风已允许，再点一次「测试」"
+                                           : "麦克风被拒绝：系统设置 → 隐私与安全性 → 麦克风，打开 MyType")
+                }
+            }
+            return
+        default:
+            showToast("麦克风被拒绝：系统设置 → 隐私与安全性 → 麦克风，打开 MyType")
+            return
+        }
+        voiceTesting = true
+        voiceTestText = "正在听 3 秒…"
+        let folder = VoiceModelInstaller.folder(in: supportDir).path
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            var text = ""
+            var failure: String?
+            if let voice = mytype_voice_new(folder) {
+                mytype_voice_key_down(voice)
+                Thread.sleep(forTimeInterval: 3)
+                mytype_voice_key_up(voice)
+                let start = Date()
+                while Date().timeIntervalSince(start) < 30 {
+                    let phase = Int(mytype_voice_poll(voice))
+                    text = mytype_voice_text(voice).map { String(cString: $0) } ?? ""
+                    if phase == Int(MYTYPE_VOICE_RESULT) { break }
+                    if phase == Int(MYTYPE_VOICE_ERROR) {
+                        failure = text
+                        break
+                    }
+                    usleep(50_000)
+                }
+                mytype_voice_free(voice)
+            } else {
+                failure = "核心没带语音"
+            }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.voiceTesting = false
+                if let failure {
+                    self.voiceTestText = "出错：\(failure)"
+                    self.showToast("麦克风测试：\(failure)")
+                } else if text.isEmpty {
+                    self.voiceTestText = "没听清"
+                    self.showToast("麦克风测试：没听清")
+                } else {
+                    self.voiceTestText = text
+                    self.showToast("麦克风没问题：\(text)")
+                }
+            }
+        }
+    }
+
+    /// 让正在跑的输入法进程退出，下次按键时由系统重新拉起：重新读语音模型和麦克风权限。
+    private func reloadInputMethod() {
+        let me = ProcessInfo.processInfo.processIdentifier
+        let bundle = Bundle.main.bundleIdentifier ?? Installer.bundleID
+        for app in NSRunningApplication.runningApplications(withBundleIdentifier: bundle)
+        where app.processIdentifier != me && app.activationPolicy == .accessory {
+            app.terminate()
+        }
+    }
+
     func downloadVoiceModel() {
         guard !voiceBusy else { return }
         let control = DownloadControl()
@@ -499,9 +587,20 @@ final class SettingsModel: ObservableObject {
                 switch result {
                 case .success:
                     self.config.voice = true
-                    self.showToast("语音模型下载好了，按住\(self.voiceKeyLabel) 说话")
-                    // 顺手问一下麦克风权限，免得第一次按语音键时才弹框（同一个程序，输入法那边也认）
-                    AVCaptureDevice.requestAccess(for: .audio) { _ in }
+                    // 顺手问一下麦克风权限，免得第一次按语音键时才弹框（同一个程序，输入法那边也认）；
+                    // 允许后把输入法进程重启，让它重新读模型和权限
+                    AVCaptureDevice.requestAccess(for: .audio) { granted in
+                        DispatchQueue.main.async {
+                            self.voicePermissionRevision += 1
+                            if granted {
+                                self.save()  // 先写文件，再让输入法重启，不然它读到的是旧的 Voice=False
+                                self.reloadInputMethod()
+                                self.showToast("语音模型和麦克风都好了，回到输入框按住\(self.voiceKeyLabel) 说话")
+                            } else {
+                                self.showToast("麦克风被拒绝了：系统设置 → 隐私与安全性 → 麦克风，打开 MyType")
+                            }
+                        }
+                    }
                 case .failure(let error as DownloadCancelled):
                     self.showToast(error.description)
                 case .failure(let error as PackError):

@@ -214,6 +214,43 @@ func voiceModelCommand(_ args: [String]) -> Bool {
     return true
 }
 
+/// 测试用：从麦克风录几秒，打印识别结果（检查 TCC 权限和 cpal 采集；不开麦克风读文件）。
+func voiceMicTest(seconds: Double) -> Bool {
+    let state = AppState.shared
+    guard let voice = mytype_voice_new(state.voiceModelDir) else {
+        print("核心没带语音")
+        return false
+    }
+    defer { mytype_voice_free(voice) }
+    print("录音 \(seconds) 秒，请说话…")
+    fflush(stdout)
+    mytype_voice_key_down(voice)
+    Thread.sleep(forTimeInterval: seconds)
+    mytype_voice_key_up(voice)
+    let start = Date()
+    var last = ""
+    while Date().timeIntervalSince(start) < 30 {
+        let phase = Int(mytype_voice_poll(voice))
+        let text = mytype_voice_text(voice).map { String(cString: $0) } ?? ""
+        if text != last {
+            print("中间：\(text)")
+            fflush(stdout)
+            last = text
+        }
+        if phase == Int(MYTYPE_VOICE_RESULT) {
+            print("识别结果：\(text)")
+            return !text.isEmpty
+        }
+        if phase == Int(MYTYPE_VOICE_ERROR) {
+            print("出错：\(text)")
+            return false
+        }
+        usleep(50_000)
+    }
+    print("30 秒没出结果")
+    return false
+}
+
 /// 测试用：不开麦克风，读 wav（16kHz 单声道）当成按住语音键说的话，打印识别结果。
 func voiceTest(_ wav: String) -> Bool {
     guard !wav.isEmpty else {
@@ -261,6 +298,8 @@ if arguments.count > 1 {
     case "--download-model": ok = downloadModelCommand(accepted: arguments.contains("--accept-license"))
     case "--install-voice-model", "--remove-voice-model": ok = voiceModelCommand(Array(arguments.dropFirst()))
     case "--voice-test": ok = voiceTest(arguments.count > 2 ? arguments[2] : "")
+    case "--voice-mic-test":
+        ok = voiceMicTest(seconds: arguments.count > 2 ? (Double(arguments[2]) ?? 3) : 3)
     case "--version":
         print(appVersion)
         ok = true
@@ -268,7 +307,7 @@ if arguments.count > 1 {
         print("用法：MyType [--register | --enable | --select | --disable | --selftest | --settings [页面] | --version |\n"
               + "              --install-lexicon [wanxiang | 文件.tar.gz] | --use-lexicon rime-ice|wanxiang |\n"
               + "              --download-model [--accept-license] | --install-voice-model [语音包.apk] |\n"
-              + "              --remove-voice-model | --voice-test 说的话.wav]")
+              + "              --remove-voice-model | --voice-test 说的话.wav | --voice-mic-test [秒数]]")
         ok = false
     }
     exit(ok ? 0 : 1)

@@ -550,6 +550,28 @@ private struct VoicePage: View {
             }
             .rowPadding()
         }
+        PrefGroup("麦克风", info: "第一次按语音键（或点「测试」）时系统会问要不要允许 MyType 使用麦克风。"
+                  + "被拒绝后到「系统设置 → 隐私与安全性 → 麦克风」里打开 MyType。") {
+            HStack(spacing: 10) {
+                RowLabel(title: "麦克风", subtitle: model.voicePermissionText)
+                if model.voiceTesting {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(width: 16, height: 16)
+                    Text(model.voiceTestText ?? "正在听…")
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                } else {
+                    Button("测试") { model.testMicrophone() }
+                        .disabled(!ready || !model.config.voice)
+                }
+            }
+            .rowPadding()
+            if !model.voiceTesting, let text = model.voiceTestText {
+                RowDivider()
+                ActionRow(title: "上次测试", subtitle: text)
+            }
+        }
     }
 
     /// 键名同 mytype.conf 的 VoiceKey；旧版拷过来的 Mac 上没有的键（Menu）单独列出来

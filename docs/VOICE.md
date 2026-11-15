@@ -24,6 +24,21 @@ mytype_voice_key_down / key_up / poll / text / cancel   （core/src/voice_ffi.rs
 | 分段 | `voice/src/audio.rs`、`vad.rs` | 重采样、320 样本定长帧、自适应噪声底 + 起始确认 100ms + 挂起 480ms |
 | 识别 | `voice/src/wtlocal/` | 微信输入法的离线模型，纯 Rust int8 推理，4 线程 |
 
+## 麦克风权限
+
+第一次按语音键（或在设置「语音」页点「测试」）时，macOS 会问要不要允许 MyType 使用麦克风。
+允许后**再按一次**语音键；设置页会把输入法进程重新加载，重新读模型和权限。
+被拒绝时到「系统设置 → 隐私与安全性 → 麦克风」里打开 MyType。
+
+设置「语音」页的「麦克风」一行会显示权限状态，点「测试」录 3 秒，走和输入法一样的核心识别，
+结果写在「上次测试」里——可以先确认麦克风和模型是否正常，再去输入框里试。
+
+命令行也能测麦克风（会录 4 秒）：
+
+```sh
+"$HOME/Library/Input Methods/MyType.app/Contents/MacOS/MyType" --voice-mic-test 4
+```
+
 ## 规则
 
 - 按住 ≥300ms 松开即结束；更短算点按，说完约 2 秒（挂起 480ms + 静音 1.5 秒）或再按一次结束；单次最长 120 秒。
