@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="icons/mytype/app-1024.png" width="112" alt="MyType">
+  <img src="icons/mytype/app-256.png" width="112" alt="MyType">
 </p>
 
 <h1 align="center">MyType</h1>
@@ -73,13 +73,13 @@ curl -fsSL https://raw.githubusercontent.com/yxxbc/MyType/main/install.sh | bash
 安装时 MyType 会退出，装完 `postinstall` 自动登记、打开并切回来；设置、用户词、自定义词都不动。
 启动后最多一天自动检查一次，可在「关于」页关掉（`CheckUpdate=False`）。
 
-0.5.x 没有内置更新器，跑一次上面的 `install.sh`（或双击 0.6.0 pkg）升上来；数据目录和设置会自动迁移。
+0.5.x 没有内置更新器，跑一次上面的 `install.sh`（或双击 0.6.x pkg）升上来；数据目录和设置会自动迁移。
 
 ## 性能
 
 相对上游 WowType 0.4.0：
 
-| | 上游 0.4.0 | 这里 0.6.0 |
+| | 上游 0.4.0 | 这里 0.6.1 |
 |---|---:|---:|
 | `--selftest` 峰值内存（万象 174 万条 + 语言模型） | 880 MB | **188 MB** |
 | 词库常驻（单独测） | 590 MB | **39 MB** |
@@ -107,10 +107,10 @@ export PATH="$HOME/.cargo/bin:$PATH"
 scripts/make-data.sh     # 雾凇词库 + english.txt + words.lm（联网下载，约一分钟）
 scripts/make-wubi.sh     # 五笔 86 码表
 macos/build.sh dist/data dist/macos
-macos/install.sh dist/macos/MyType-0.6.0-macos.zip
+macos/install.sh dist/macos/MyType-0.6.1-macos.zip
 ```
 
-产物在 `dist/macos/`：`MyType.app`、`MyType-0.6.0-macos.zip`、`MyType-0.6.0-macos.pkg`。
+产物在 `dist/macos/`：`MyType.app`、`MyType-0.6.1-macos.zip`、`MyType-0.6.1-macos.pkg`。
 
 测试：
 
@@ -144,7 +144,7 @@ macos/ShellTests/run.sh dist/data   # 有词库数据时
 <details>
 <summary>相对上游的其它改动</summary>
 
-| 项目 | 上游 0.4.0 | 这里 0.6.0 |
+| 项目 | 上游 0.4.0 | 这里 0.6.1 |
 |---|---|---|
 | 名字 / bundle id / 设置文件 | WowType / `io.github.gloridust…` / `wowtype.conf` | **MyType / `io.github.yxxbc.inputmethod.MyType` / `mytype.conf`** |
 | 版本 | 0.4.0 | 从 **0.5.0** 起自己编 |

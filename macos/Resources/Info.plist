@@ -45,7 +45,7 @@
 	<key>InputMethodServerDelegateClass</key>
 	<string>MyTypeInputController</string>
 	<!-- 图标是单色模板图（icons/mytype/make-icons.swift 生成的矢量 PDF）：黑色 + 透明，系统按菜单栏深浅色上色，
-	     和系统自带的输入法、微信输入法一样。menu.pdf 是 16pt 的圆里挖出 M；caret@2x.pdf 只有 M，
+	     和系统自带的输入法、微信输入法一样。menu.pdf 是 16pt 的锦鲤剪影；caret@2x.pdf 是同一条锦鲤，
 	     切换输入法时光标旁的提示气泡用它（TISIconLabels → CustomIcon，照系统自带的 AinuIM 写）。 -->
 	<key>TISIconIsTemplate</key>
 	<true/>
