@@ -12,7 +12,7 @@
   <a href="https://github.com/yxxbc/MyType/releases/latest"><img src="https://img.shields.io/github/v/release/yxxbc/MyType?display_name=tag&sort=semver&color=2ea44f" alt="Release"></a>
   <img src="https://img.shields.io/badge/macOS-12%2B-black?logo=apple&logoColor=white" alt="macOS 12+">
   <img src="https://img.shields.io/badge/arch-arm64%20%7C%20x86__64-lightgrey" alt="arm64 | x86_64">
-  <img src="https://img.shields.io/badge/license-MIT%20%7C%20Apache--2.0-blue" alt="License">
+  <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20%7C%20Apache--2.0-blue" alt="License"></a>
   <img src="https://img.shields.io/github/downloads/yxxbc/MyType/total?color=orange" alt="Downloads">
 </p>
 
@@ -120,6 +120,19 @@ macos/test.sh
 macos/ShellTests/run.sh dist/data   # 有词库数据时
 ```
 
+## 发布
+
+打 tag 会触发 `.github/workflows/release.yml`：核对 tag 和 `core/Cargo.toml` 的版本、生成词库/码表、
+跑测试、打 pkg/zip、写 `SHA256SUMS`，然后发 GitHub Release。
+
+```sh
+git tag v0.6.2
+git push origin v0.6.2
+```
+
+也可以在 Actions → Release → Run workflow 填一个已有的 tag；`dry_run` 默认只构建并上传 Actions artifact，
+不创建/更新 Release。CI 跑 `cargo test` 和 `macos/test.sh`，见 `.github/workflows/ci.yml`。
+
 ## 数据与目录
 
 - 数据目录：`~/Library/Application Support/MyType`（设置文件 `mytype.conf`）
@@ -139,7 +152,7 @@ macos/ShellTests/run.sh dist/data   # 有词库数据时
 
 ## 和上游的关系
 
-从 [Gloridust/WowType](https://github.com/Gloridust/WowType) 0.4.0（commit `d145a93`）分出来，之后不跟上游同步，自己走。代码许可照旧（MIT / Apache-2.0），原作者是 Gloridust。
+从 [Gloridust/WowType](https://github.com/Gloridust/WowType) 0.4.0（commit `d145a93`）分出来，之后不跟上游同步，自己走。代码许可照旧（[MIT](LICENSE-MIT) / [Apache-2.0](LICENSE-APACHE)），原作者是 Gloridust。
 
 <details>
 <summary>相对上游的其它改动</summary>
@@ -155,6 +168,8 @@ macos/ShellTests/run.sh dist/data   # 有词库数据时
 
 ## 许可与数据
 
-代码 MIT / Apache-2.0（见 `core/data`）。词库 rime-ice（GPL-3.0）、可选的万象词库（CC BY 4.0）、词级语言模型 `words.lm`（CC-BY-SA-4.0）、五笔码表 rime-wubi（LGPL-3.0）、简繁表 OpenCC（Apache-2.0）。各自的许可证随包和仓库都在。
+代码 MIT / Apache-2.0（[LICENSE-MIT](LICENSE-MIT)、[LICENSE-APACHE](LICENSE-APACHE)，另有 [NOTICE](NOTICE)）。原项目 WowType 由 Gloridust 编写。
+
+数据：雾凇拼音（GPL-3.0）、Tatoeba 词频（CC BY 2.0 FR）、`words.lm`（CC BY-SA 4.0）、五笔码表（LGPL-3.0）、简繁表（Apache-2.0）、可选的万象词库（CC BY 4.0）。完整的来源、许可和包内许可文件见 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)。
 
 <p align="center"><sub>MyType · made for macOS</sub></p>

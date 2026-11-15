@@ -1,0 +1,142 @@
+name: Release
+
+# 打 v* tag 时构建并发布；也可以手动 Run workflow 指定一个已经存在的 tag。
+# 手动执行默认 dry_run=true：只构建、上传 Actions artifact，不创建/更新 GitHub Release。
+# 如果 fork 的 Actions 没有在 push/tag 时自动跑，到 Actions 页手动 Run workflow，填 tag、dry_run=false。
+#
+# 做什么：
+#   1. 核对 tag 和 core/Cargo.toml 的版本一致
+#   2. 生成词库/码表（联网下载 rime-ice、words.lm、rime-wubi）
+#   3. 跑核心测试、macOS 外壳测试、ShellTests
+#   4. 打 MyType-<版本>-macos.pkg / .zip，写 SHA256SUMS
+#   5. 发布到 GitHub Release（或只留 Actions artifact）
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要发布的 tag（例如 v0.6.2），必须已经存在"
+        required: true
+        type: string
+      dry_run:
+        description: "只构建和上传 Actions artifact，不创建/更新 Release"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    name: 构建并发布
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - name: 取 tag
+        id: meta
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="$INPUT_TAG"
+          else
+            TAG="$GITHUB_REF_NAME"
+          fi
+          case "$TAG" in
+            v*) ;;
+            *) echo "tag 必须以 v 开头：$TAG" >&2; exit 1 ;;
+          esac
+          VERSION="${TAG#v}"
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9][0-9A-Za-z._+~-]*$'; then
+            echo "版本号不合法：$VERSION" >&2
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.meta.outputs.tag }}
+          fetch-depth: 0
+
+      - name: 核对版本
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          CARGO_VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' core/Cargo.toml | head -1)
+          [ "$VERSION" = "$CARGO_VERSION" ] || {
+            echo "tag 是 $VERSION，core/Cargo.toml 是 $CARGO_VERSION" >&2
+            exit 1
+          }
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: |
+            aarch64-apple-darwin
+            x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+
+      - name: 词库和码表
+        timeout-minutes: 15
+        run: |
+          scripts/make-data.sh
+          scripts/make-wubi.sh
+
+      - name: 测试
+        timeout-minutes: 25
+        run: |
+          cargo test --release --locked -p mytype-core --lib
+          macos/test.sh
+          macos/ShellTests/run.sh dist/data
+
+      - name: 打包和校验
+        timeout-minutes: 25
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          macos/build.sh dist/data dist/macos
+          cd dist/macos
+          shasum -a 256 "MyType-$VERSION-macos.pkg" "MyType-$VERSION-macos.zip" > SHA256SUMS
+          shasum -a 256 -c SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MyType-${{ steps.meta.outputs.version }}
+          if-no-files-found: error
+          path: |
+            dist/macos/MyType-${{ steps.meta.outputs.version }}-macos.pkg
+            dist/macos/MyType-${{ steps.meta.outputs.version }}-macos.zip
+            dist/macos/SHA256SUMS
+
+      - name: 发布
+        if: ${{ github.event_name == 'push' || github.event.inputs.dry_run == 'false' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          ASSETS=(
+            "dist/macos/MyType-$VERSION-macos.pkg"
+            "dist/macos/MyType-$VERSION-macos.zip"
+            "dist/macos/SHA256SUMS"
+          )
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${ASSETS[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" "${ASSETS[@]}" --repo "$GITHUB_REPOSITORY" \
+              --title "MyType $VERSION" --generate-notes
+          fi
