@@ -21,6 +21,13 @@ use crate::HistoryEntry;
 /// 半衰期：30 天（毫秒）。
 pub const HALF_LIFE_MS: f64 = 30.0 * 24.0 * 3600.0 * 1000.0;
 
+/// 衰减后的热度低于这个值就清掉：选一次大约 5 个多月后（30 天半衰期）
+/// 0.02 以下；常用词要更久。避免 history.tsv 多年只涨不消。
+pub const MIN_DECAYED: f64 = 0.02;
+/// 最多保留多少条选词记录、多少个搭配（按衰减后的热度取前 N 个）。
+pub const MAX_HISTORY_WORDS: usize = 20_000;
+pub const MAX_PAIRS: usize = 20_000;
+
 /// 一个学过的搭配给多少分（自然对数）：`PAIR_WEIGHT * ln(1+热度)`，最多 [`PAIR_BONUS_CAP`]。
 ///
 /// 用过一次约 1.7，三次约 3.5——足够让常见的同音搭配（发给/发个、再/在）翻过来，
@@ -105,6 +112,53 @@ impl UserPairs {
     fn insert(&mut self, prev: String, cur: String, entry: HistoryEntry) {
         self.map.entry(prev).or_default().insert(cur, entry);
     }
+
+    /// 清掉衰减后热度太低的搭配；超过 `max` 条时按热度留前 `max` 条。返回删掉的条数。
+    pub fn prune(&mut self, at_ms: u64, max: usize) -> usize {
+        let before = self.len();
+        for next in self.map.values_mut() {
+            next.retain(|_, entry| decayed(*entry, at_ms) >= MIN_DECAYED);
+        }
+        self.map.retain(|_, next| !next.is_empty());
+        if self.len() > max {
+            let mut rows: Vec<(String, String, HistoryEntry, f64)> = self
+                .iter()
+                .map(|(prev, cur, entry)| {
+                    (prev.to_string(), cur.to_string(), entry, decayed(entry, at_ms))
+                })
+                .collect();
+            rows.sort_by(|a, b| b.3.total_cmp(&a.3));
+            rows.truncate(max);
+            self.map.clear();
+            for (prev, cur, entry, _) in rows {
+                self.insert(prev, cur, entry);
+            }
+        }
+        before - self.len()
+    }
+}
+
+/// 清掉衰减后热度太低的选词记录；超过 `max` 条时按热度留前 `max` 条。返回删掉的条数。
+pub fn prune_words(
+    words: &mut HashMap<String, HistoryEntry>,
+    at_ms: u64,
+    max: usize,
+) -> usize {
+    let before = words.len();
+    words.retain(|_, entry| decayed(*entry, at_ms) >= MIN_DECAYED);
+    if words.len() > max {
+        let mut rows: Vec<(String, HistoryEntry, f64)> = words
+            .iter()
+            .map(|(word, entry)| (word.clone(), *entry, decayed(*entry, at_ms)))
+            .collect();
+        rows.sort_by(|a, b| b.2.total_cmp(&a.2));
+        rows.truncate(max);
+        words.clear();
+        for (word, entry, _) in rows {
+            words.insert(word, entry);
+        }
+    }
+    before - words.len()
 }
 
 /// 基础语言模型 + 用户学到的搭配。束搜索用它打分。
@@ -247,6 +301,28 @@ mod tests {
         assert!(lm.score(Some("发"), "给") > lm.score(Some("发"), "个"));
         // 句首没有前一个词时用 start
         assert!(lm.score(None, "给") > lm.score(None, "个"));
+    }
+
+    #[test]
+    fn prune_drops_cold_entries_and_caps_by_heat() {
+        let now = HALF_LIFE_MS as u64 * 12;
+        let mut words = HashMap::new();
+        let entry = |count, last_used_ms| HistoryEntry { count, last_used_ms };
+        words.insert("旧".to_string(), entry(1, 0));
+        words.insert("新".to_string(), entry(1, now));
+        words.insert("热".to_string(), entry(10, now));
+        assert_eq!(prune_words(&mut words, now, 2), 1, "只删掉冷却的旧记录");
+        assert!(words.contains_key("热") && words.contains_key("新"));
+        assert!(!words.contains_key("旧"));
+
+        let mut pairs = UserPairs::default();
+        pairs.learn("旧", "搭配", 0);
+        pairs.learn("新", "甲", now);
+        pairs.learn("新", "乙", now);
+        pairs.learn("新", "丙", now);
+        assert_eq!(pairs.prune(now, 1), 3, "旧搭配清掉，超过上限的按热度截断");
+        assert_eq!(pairs.len(), 1);
+        assert!(pairs.get("新", "甲").is_some() || pairs.get("新", "乙").is_some() || pairs.get("新", "丙").is_some());
     }
 
     #[test]

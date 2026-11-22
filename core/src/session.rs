@@ -2469,8 +2469,10 @@ impl<'e> Session<'e> {
                 } else {
                     c.consumed
                 };
-                // 自定义词里带换行的，不往用户词库里记（词库是一行一条）
-                let kind = if c.text.contains(['\n', '\t']) {
+                // 自定义词里带换行的，不往用户词库里记（词库是一行一条）；
+                // 原始拼音/英文候选也不学（否则 `quit`、`hello` 这些会进 history，
+                // 看起来像“学过的词”，和文档说的“原始拼音不学习”不一致）。
+                let kind = if c.text.contains(['\n', '\t']) || crate::is_raw_candidate(&c) {
                     CandidateKind::Plain
                 } else {
                     CandidateKind::Word
@@ -3046,6 +3048,25 @@ mod tests {
         assert!(frame.learned);
         assert_eq!(engine.history_count("你"), 1);
         assert_eq!(engine.history_count("hao"), 0);
+    }
+
+    #[test]
+    fn selecting_raw_candidate_does_not_learn() {
+        let lexicon = MemoryLexicon::from_tsv_str("ni hao\t你好\t10000\n").unwrap();
+        let engine = Engine::new(Arc::new(lexicon), Arc::new(BigramLm::default()));
+        let mut session = Session::with_engine(&engine);
+        for c in "hello".chars() {
+            session.key(&Key::char(c));
+        }
+        let index = session
+            .candidates()
+            .iter()
+            .position(|c| c.text == "hello")
+            .expect("原始串候选要在");
+        let frame = session.choose(index);
+        assert_eq!(frame.commit.as_deref(), Some("hello"));
+        assert!(!frame.learned, "选原始串不算学到一个词");
+        assert_eq!(engine.history_count("hello"), 0);
     }
 
     #[test]

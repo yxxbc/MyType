@@ -420,20 +420,24 @@ impl Engine {
         self.pairs.read().map(|p| p.len()).unwrap_or(0)
     }
 
-    /// 把用户输入习惯（词的热度、词搭配）存到 TSV。
+    /// 把用户输入习惯（词的热度、词搭配）存到 TSV。存之前按衰减后的热度清一遍、
+    /// 超过上限按热度截断，免得 history.tsv 只涨不消。
     pub fn save_history<P: AsRef<std::path::Path>>(&self, path: P) -> Result<()> {
-        let history = self
+        let mut history = self
             .history
-            .read()
+            .write()
             .map_err(|_| anyhow::anyhow!("history lock poisoned"))?;
-        let pairs = self
+        let mut pairs = self
             .pairs
-            .read()
+            .write()
             .map_err(|_| anyhow::anyhow!("pairs lock poisoned"))?;
-        crate::learn::save_history(path, &history, &pairs)
+        let now = now_ms();
+        crate::learn::prune_words(&mut history, now, crate::learn::MAX_HISTORY_WORDS);
+        pairs.prune(now, crate::learn::MAX_PAIRS);
+        crate::learn::save_history(path, &*history, &*pairs)
     }
 
-    /// 读回 [`Engine::save_history`] 存的输入习惯，返回条数。
+    /// 读回 [`Engine::save_history`] 存的输入习惯，返回读到的条数；读完按同样的规则清一遍。
     pub fn load_history<P: AsRef<std::path::Path>>(&self, path: P) -> Result<usize> {
         let mut history = self
             .history
@@ -443,7 +447,11 @@ impl Engine {
             .pairs
             .write()
             .map_err(|_| anyhow::anyhow!("pairs lock poisoned"))?;
-        crate::learn::load_history(path, &mut history, &mut pairs)
+        let loaded = crate::learn::load_history(path, &mut history, &mut pairs)?;
+        let now = now_ms();
+        crate::learn::prune_words(&mut history, now, crate::learn::MAX_HISTORY_WORDS);
+        pairs.prune(now, crate::learn::MAX_PAIRS);
+        Ok(loaded)
     }
 
     pub fn history_count(&self, word: &str) -> u32 {
@@ -2103,7 +2111,7 @@ fn abbrev_before_last(c: &Candidate) -> bool {
 }
 
 /// 原始串 / 英文候选（append_raw_candidate 插进来的）。
-fn is_raw_candidate(c: &Candidate) -> bool {
+pub(crate) fn is_raw_candidate(c: &Candidate) -> bool {
     c.words.len() == 1 && c.words[0].pinyin.is_empty() && c.features.coverage_score == 0.0
 }
 
