@@ -156,7 +156,7 @@ fn main() {
         let n = engine.load_conversion(path).expect("载入简繁表");
         println!("简繁表 {n} 条，载入 {:?}", started.elapsed());
     }
-    // 和 mytype_engine_new 一样在载入时建好模糊音索引，不算进第一次按键
+    // 新快照里已经有模糊音索引；旧缓存/内存词库在这里补建，不算进第一次按键
     engine.prepare_fuzzy();
     if let Some(path) = &nnlm_path {
         let started = Instant::now();

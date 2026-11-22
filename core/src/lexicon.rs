@@ -20,7 +20,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use crate::syllable::{Syllable, SyllableId, SyllableQuery};
 
 /// 词库快照的格式版本。格式一变就改版本号，旧快照自动失效。
-const CACHE_VERSION: u32 = 3;
+const CACHE_VERSION: u32 = 4;
 
 /// 快照里存的是音节 ID（音节表的下标），音节表一改（比如补了 biang）旧快照就对不上了。
 /// 所以写进快照的版本号混进音节表的指纹：表一变，旧快照自动作废重建。
@@ -312,8 +312,8 @@ pub struct MemoryLexicon {
     jianpin: HashIndex,
     /// 模糊音索引：键是归并后音节 ID 的滚动哈希。
     ///
-    /// 默认不构建——模糊音默认关闭，而 55 万词库下建这张表要占掉不少加载时间。
-    /// 载入后 [`Lexicon::prepare_fuzzy`]、或者第一次模糊查询时再建。
+    /// 内存词库默认不构建，第一次模糊查询或写快照时才建；写快照时建好的索引会一起
+    /// 写进 `.wcache`，以后打开直接 mmap，不占匿名常驻内存。
     fuzzy: OnceLock<HashIndex>,
     /// 全拼词条所有「真前缀」的哈希（升序、去重），供 has_longer 剪枝
     full_prefixes: Vec<u64>,
@@ -607,9 +607,12 @@ impl MemoryLexicon {
         Ok(lex)
     }
 
-    /// 把内存里的词库写成快照（v3）。索引顺序、生僻字顺序都照原样，读的时候直接二分。
+    /// 把内存里的词库写成快照（v4）。索引顺序、生僻字顺序都照原样，读的时候直接二分。
+    /// 模糊音索引也一起写进去：以后打开快照时它是 mmap 的干净页，不占匿名常驻内存，
+    /// 也不用在第一次模糊查询时现建（全量词库约 0.2 秒）。
     fn snapshot_bytes(&self, src_len: u64, src_mtime: u64) -> Vec<u8> {
         let count = self.len();
+        let fuzzy = self.fuzzy.get_or_init(|| self.build_fuzzy_index());
         let mut offsets: Vec<u32> = Vec::with_capacity(count + 1);
         let mut records: Vec<u8> = Vec::with_capacity(count * 34);
         for entry in 0..count {
@@ -632,7 +635,8 @@ impl MemoryLexicon {
         let jianpin_at = full_at + self.full.len() * 12;
         let full_prefix_at = jianpin_at + self.jianpin.len() * 12;
         let initial_prefix_at = full_prefix_at + self.full_prefixes.len() * 8;
-        let data_len = initial_prefix_at + self.initial_prefixes.len() * 8;
+        let fuzzy_at = initial_prefix_at + self.initial_prefixes.len() * 8;
+        let data_len = fuzzy_at + fuzzy.len() * 12;
 
         let mut buf: Vec<u8> = Vec::with_capacity(data_len);
         buf.extend_from_slice(FILE_MAGIC);
@@ -651,6 +655,8 @@ impl MemoryLexicon {
         buf.extend_from_slice(&(self.full_prefixes.len() as u32).to_le_bytes());
         buf.extend_from_slice(&(self.initial_prefixes.len() as u32).to_le_bytes());
         buf.extend_from_slice(&(data_len as u32).to_le_bytes());
+        buf.extend_from_slice(&(fuzzy_at as u32).to_le_bytes());
+        buf.extend_from_slice(&(fuzzy.len() as u32).to_le_bytes());
         debug_assert_eq!(buf.len(), FILE_HEADER);
 
         for offset in &offsets {
@@ -670,6 +676,10 @@ impl MemoryLexicon {
         }
         for hash in &self.initial_prefixes {
             buf.extend_from_slice(&hash.to_le_bytes());
+        }
+        for n in 0..fuzzy.len() {
+            buf.extend_from_slice(&fuzzy.hashes[n].to_le_bytes());
+            buf.extend_from_slice(&fuzzy.entries[n].to_le_bytes());
         }
         debug_assert_eq!(buf.len(), data_len);
         buf
@@ -834,7 +844,7 @@ impl Lexicon for MemoryLexicon {
     }
 
     fn prepare_fuzzy(&self) {
-        // 55 万条的词库约 0.2 秒
+        // 全量词库约 0.2 秒
         self.fuzzy.get_or_init(|| self.build_fuzzy_index());
     }
 
@@ -1549,12 +1559,12 @@ pub fn parse_pinyin_keys(pinyin: &str) -> Result<Vec<SyllableKey>> {
     Ok(keys)
 }
 
-// ===== 词库快照（v3）：mmap + 二分，常驻的只是文件页 =====
+// ===== 词库快照（v4）：mmap + 二分，常驻的只是文件页 =====
 
 /// 快照文件头。布局（全是小端）：
 ///
 /// ```text
-/// 0  magic "WLC3"          4  version（音节表指纹一起）
+/// 0  magic "WLC4"          4  version（音节表指纹一起）
 /// 8  src_len u64          16 src_mtime u64
 /// 24 count u32            28 jianpin_len u32
 /// 32 total_freq f64
@@ -1562,14 +1572,15 @@ pub fn parse_pinyin_keys(pinyin: &str) -> Result<Vec<SyllableKey>> {
 /// 48 full_at u32          52 jianpin_at u32
 /// 56 full_prefix_at u32   60 initial_prefix_at u32
 /// 64 full_prefix_len u32  68 initial_prefix_len u32
-/// 72 data_len u32
+/// 72 data_len u32         76 fuzzy_at u32
+/// 80 fuzzy_len u32
 /// ```
 ///
 /// 后面依次是：`count+1` 个 u32 的词条记录偏移、词条记录（词长 u16 + 词 + 频次 f64 +
 /// 音节数 u8 + 音节 u16×n）、按哈希排好的全拼索引 `(u64, u32)`、简拼索引、
-/// 全拼前缀哈希、声母前缀哈希。索引里存的是词条号，记录按偏移随机访问。
-const FILE_MAGIC: &[u8; 4] = b"WLC3";
-const FILE_HEADER: usize = 76;
+/// 全拼前缀哈希、声母前缀哈希、模糊音索引。索引里存的是词条号，记录按偏移随机访问。
+const FILE_MAGIC: &[u8; 4] = b"WLC4";
+const FILE_HEADER: usize = 84;
 
 /// 只读的字节来源：优先映射文件——映射出来的是干净的页，系统随时能回收，不占 swap；
 /// 映射不了（非 unix、空文件）就整个读进内存，行为和以前一样。
@@ -1658,7 +1669,10 @@ pub struct CompiledLexicon {
     /// 查一个哈希先跳进对应的桶再二分，比在 174 万行上直接二分少一半以上的 cache miss。
     full_radix: Vec<u32>,
     jianpin_radix: Vec<u32>,
-    /// 模糊音索引：默认不建（模糊音默认关），第一次模糊查询时在内存里建一次。
+    /// 模糊音索引在快照里的位置和行数（0 表示快照里没有，第一次模糊查询时再建）。
+    fuzzy_at: usize,
+    fuzzy_len: usize,
+    /// 快照里没有写进这张表时（例如空词库）才在这里懒建；新快照直接读映射。
     fuzzy: OnceLock<HashIndex>,
 }
 
@@ -1689,13 +1703,16 @@ impl CompiledLexicon {
         let full_prefix_len = Self::read_u32(bytes, 64)? as usize;
         let initial_prefix_len = Self::read_u32(bytes, 68)? as usize;
         let data_len = Self::read_u32(bytes, 72)? as usize;
+        let fuzzy_at = Self::read_u32(bytes, 76)? as usize;
+        let fuzzy_len = Self::read_u32(bytes, 80)? as usize;
         if data_len != bytes.len()
             || offsets_at + (count + 1) * 4 > records_at
             || records_at > full_at
             || full_at + count * 12 > jianpin_at
             || jianpin_at + jianpin_len * 12 > full_prefix_at
             || full_prefix_at + full_prefix_len * 8 > initial_prefix_at
-            || initial_prefix_at + initial_prefix_len * 8 > bytes.len()
+            || initial_prefix_at + initial_prefix_len * 8 > fuzzy_at
+            || fuzzy_at + fuzzy_len * 12 != bytes.len()
         {
             bail!("快照的段位置不对");
         }
@@ -1712,6 +1729,8 @@ impl CompiledLexicon {
             initial_prefix_at,
             full_prefix_len,
             initial_prefix_len,
+            fuzzy_at,
+            fuzzy_len,
             full_radix: Vec::new(),
             jianpin_radix: Vec::new(),
             fuzzy: OnceLock::new(),
@@ -2034,6 +2053,19 @@ impl CompiledLexicon {
         }
         sorted
     }
+
+    /// 模糊音索引里等于 hash 的词条号：存在快照里时直接二分映射的页，没有时读内存索引。
+    fn fuzzy_entries(&self, hash: u64) -> Vec<usize> {
+        if self.fuzzy_len > 0 {
+            self.group(self.fuzzy_at, self.fuzzy_len, &[], hash)
+                .chunks_exact(12)
+                .map(Self::entry_at_row)
+                .collect()
+        } else {
+            let index = self.fuzzy.get_or_init(|| self.build_fuzzy_index());
+            index.group(hash).iter().map(|&entry| entry as usize).collect()
+        }
+    }
 }
 
 impl Lexicon for CompiledLexicon {
@@ -2065,8 +2097,8 @@ impl Lexicon for CompiledLexicon {
     }
 
     fn prepare_fuzzy(&self) {
-        // 模糊音默认关：快照里不带这张表，第一次模糊查询时再建（几秒内建好，别占常驻）
-        if self.fuzzy.get().is_none() {
+        // 新快照里已经带了模糊音索引（映射进来的干净页）；没有写进去时才现建。
+        if self.fuzzy_len == 0 {
             self.fuzzy.get_or_init(|| self.build_fuzzy_index());
         }
     }
@@ -2094,12 +2126,8 @@ impl Lexicon for CompiledLexicon {
                 SyllableQuery::Jianpin { .. } => return Vec::new(),
             }
         }
-        let index = self.fuzzy.get_or_init(|| self.build_fuzzy_index());
-        let start = index.hashes.partition_point(|&h| h < hash);
-        let len = index.hashes[start..].partition_point(|&h| h == hash);
-        index.entries[start..start + len]
-            .iter()
-            .map(|&entry| entry as usize)
+        self.fuzzy_entries(hash)
+            .into_iter()
             .filter(|&entry| {
                 self.key_count(entry) == ids.len()
                     && (0..ids.len()).all(|at| {
@@ -2333,6 +2361,24 @@ mod tests {
             assert_eq!(words_of(&*first, input), words_of(&*second, input));
         }
         assert_eq!(words_of(&*second, &["ni", "hao"]), vec!["你好"]);
+        cleanup(&path);
+    }
+
+    #[test]
+    fn fuzzy_index_is_written_into_the_snapshot() {
+        let path = temp_lexicon("fuzzy", "zhong\t中\t100\nzong\t总\t50\n");
+        let _ = open_cached(&path).unwrap();
+        let (len, mtime) = source_stamp(&path).unwrap();
+        let cache = cache_path(&path);
+        let lex = CompiledLexicon::open(&cache, len, mtime).unwrap();
+        assert!(lex.fuzzy_len > 0, "快照里应当带模糊音索引");
+        let query = [Syllable::from_text("zong").unwrap().query(false)];
+        let found = lex.lookup_fuzzy(&query, 1);
+        assert!(
+            found.iter().any(|e| e.word == "中"),
+            "zong 按 z=zh 应当查到中：{:?}",
+            found.iter().map(|e| e.word.as_str()).collect::<Vec<_>>()
+        );
         cleanup(&path);
     }
 

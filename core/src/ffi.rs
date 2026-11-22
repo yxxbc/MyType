@@ -90,7 +90,8 @@ pub unsafe extern "C" fn mytype_engine_new(
             _ => Arc::new(BigramLm::default()),
         };
         let engine = Engine::new(lexicon, lm);
-        // 外壳都在后台线程里载入引擎：模糊音索引（兜底默认开）也在这时建好，不留到第一次按键
+        // 新快照已经把模糊音索引写进 .wcache 了（mmap）；旧词库/旧缓存才在这里补建，
+        // 别留到第一次按键。
         engine.prepare_fuzzy();
         Ok(engine)
     })();

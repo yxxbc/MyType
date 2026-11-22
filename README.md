@@ -82,6 +82,10 @@ curl -fsSL https://raw.githubusercontent.com/yxxbc/MyType/main/install.sh | bash
 | 词库载入 | 1.3 s | **0.2 s** |
 | 每次组句按键（平均） | ~4 ms | **2.35 ms** |
 
+载入 0.2 s 指 `.wcache` 命中、模糊音索引已写进 v4 快照（mmap 的干净页）时的常驻载入；
+首次建快照约 4.3 s（含写模糊音索引）。2026-11-23 复测：rime-ice 92.9 万条常驻载入
+`--selftest` 显示 0.0 s（进程总耗时 0.06 s），5000 行 `user.tsv` 不再拖慢载入。
+
 细节和评测见 [引擎文档](docs/ENGINE.md)。
 
 ## 数据
