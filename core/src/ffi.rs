@@ -457,6 +457,32 @@ pub unsafe extern "C" fn mytype_engine_set_typo_correction(
     0
 }
 
+/// 开关自动学习（ABI 1.13 起，默认开）：选够阈值的词自动收进用户词库。返回 0 成功，-1 失败。
+#[no_mangle]
+pub unsafe extern "C" fn mytype_engine_set_auto_learn(
+    engine: *mut MyTypeEngineHandle,
+    on: c_int,
+) -> c_int {
+    if engine.is_null() {
+        set_last_error("engine is null");
+        return -1;
+    }
+    unsafe { &mut *engine }.engine.set_auto_learn(on != 0);
+    0
+}
+
+/// 清除自动学到的数据（ABI 1.13 起）：用户词、选词热度和搭配；自定义词和基础词库不动。
+/// 返回 0 成功，-1 失败。
+#[no_mangle]
+pub unsafe extern "C" fn mytype_engine_clear_learning(engine: *mut MyTypeEngineHandle) -> c_int {
+    if engine.is_null() {
+        set_last_error("engine is null");
+        return -1;
+    }
+    unsafe { &*engine }.engine.clear_learning();
+    0
+}
+
 /// 是否也出 CJK 扩展 B 区及以后的单字（ABI 1.9 起，默认不出；通用规范汉字表里的照常）。返回 0 成功，-1 失败。
 #[no_mangle]
 pub unsafe extern "C" fn mytype_engine_set_rare_ext_chars(
@@ -1146,7 +1172,7 @@ pub extern "C" fn mytype_abi_version() -> c_int {
 
 /// C 接口版本，和 `mytype_core.h` 里的 `MYTYPE_ABI_VERSION_*` 一致（测试会比对）。
 pub const ABI_VERSION_MAJOR: c_int = 1;
-pub const ABI_VERSION_MINOR: c_int = 11;
+pub const ABI_VERSION_MINOR: c_int = 13;
 
 /// MyType 版本号字符串。
 #[no_mangle]
@@ -1203,7 +1229,7 @@ mod tests {
         };
         assert_eq!(read("MYTYPE_ABI_VERSION_MAJOR"), ABI_VERSION_MAJOR);
         assert_eq!(read("MYTYPE_ABI_VERSION_MINOR"), ABI_VERSION_MINOR);
-        assert_eq!(mytype_abi_version(), 1011);
+        assert_eq!(mytype_abi_version(), 1013);
     }
 }
 

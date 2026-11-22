@@ -16,7 +16,7 @@
  * 删函数或改参数含义时升主版本。外壳启动时用 mytype_abi_version() 比对主版本。
  * 规则见 docs/ABI.md。 */
 #define MYTYPE_ABI_VERSION_MAJOR 1
-#define MYTYPE_ABI_VERSION_MINOR 11
+#define MYTYPE_ABI_VERSION_MINOR 13
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,6 +43,13 @@ int mytype_engine_set_max_candidates(MyTypeEngineHandle *engine, unsigned int ma
 
 /* 开关按错键纠错（相邻键、两键按反、多按/漏按），默认开。返回 0 成功。 */
 int mytype_engine_set_typo_correction(MyTypeEngineHandle *engine, int on);
+
+/* 开关自动学习（ABI 1.13 起，默认开）：选够阈值的词自动收进用户词库。返回 0 成功。 */
+int mytype_engine_set_auto_learn(MyTypeEngineHandle *engine, int on);
+
+/* 清除自动学到的数据（ABI 1.13 起）：用户词、选词热度和搭配；自定义词和基础词库不动。
+ * 返回 0 成功。 */
+int mytype_engine_clear_learning(MyTypeEngineHandle *engine);
 
 /* 是否也出 CJK 扩展 B 区及以后的单字（ABI 1.9 起），默认不出：常见中文字体都没有这些字，
  * 列出来是方块。通用规范汉字表里的扩展区字和含这些字的词不受影响。返回 0 成功。 */
@@ -309,6 +316,9 @@ void mytype_translate_configure_local(MyTypeTranslator *translator, const char *
                                        const char *server, unsigned int idle_secs);
 /* 本地模型的 llama-server 正在跑时返回 1（ABI 1.1 起）。 */
 int mytype_translate_local_running(const MyTypeTranslator *translator);
+/* 停掉本地模型的 llama-server（ABI 1.12 起）：配置保留，下次翻译时按需再起。正在跑的本地
+ * 请求会取消，已经译好的结果保留。外壳在内存压力、关掉互译时调。 */
+void mytype_translate_release_local(MyTypeTranslator *translator);
 /* 能翻译时返回 1：填了地址和模型，或者用本地模型且模型文件在。 */
 int mytype_translate_ready(const MyTypeTranslator *translator);
 /* 开始翻译 text，取消别的请求；正在译或已经译好同一句话时什么也不做。 */

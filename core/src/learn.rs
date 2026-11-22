@@ -90,6 +90,11 @@ impl UserPairs {
         self.map.is_empty()
     }
 
+    /// 清掉全部搭配（设置里「清除学习数据」）。
+    pub fn clear(&mut self) {
+        self.map.clear();
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (&str, &str, HistoryEntry)> {
         self.map.iter().flat_map(|(prev, next)| {
             next.iter()

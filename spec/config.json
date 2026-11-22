@@ -639,6 +639,15 @@
       "note": "在本机记录每日上屏汉字数和次数，不记录输入内容"
     },
     {
+      "key": "AutoLearn",
+      "type": "bool",
+      "default": true,
+      "platforms": [
+        "macos"
+      ],
+      "note": "自动学习：选够 3 次的词收进用户词库（只学确认上屏的候选）"
+    },
+    {
       "key": "AutoSpace",
       "type": "bool",
       "default": false,

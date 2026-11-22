@@ -564,6 +564,24 @@ impl Translator {
         inner.job.error.clear();
     }
 
+    /// 停掉本地模型的 llama-server（约 1.5 GB），配置和模型文件都留着：下次翻译时按需再起。
+    /// 正在跑的请求会被取消，已经译好的结果保留。内存压力、关掉互译、退出输入法时用。
+    pub fn release_local(&self) {
+        {
+            let mut inner = self.inner.lock().unwrap();
+            if inner.job.state == JobState::Running {
+                inner.kill();
+                inner.next_id += 1;
+                inner.job.id = 0;
+                inner.job.source.clear();
+                inner.job.raw.clear();
+                inner.job.state = JobState::Idle;
+                inner.job.error.clear();
+            }
+        }
+        self.local.shutdown();
+    }
+
     pub fn poll(&self) -> Snapshot {
         let inner = self.inner.lock().unwrap();
         let job = &inner.job;
@@ -890,6 +908,16 @@ mod tests {
             "{}",
             snap.error
         );
+        assert!(translator.local_running());
+        // 内存压力：停掉 llama-server，但配置和模型设置留着，下一次翻译时按需再起
+        translator.release_local();
+        assert!(!translator.local_running());
+        assert!(
+            translator.config().local.is_some(),
+            "release 只停进程，不改配置"
+        );
+        translator.start("Good morning");
+        assert_eq!(wait(&translator).text, "你好");
         assert!(translator.local_running());
         // 外文译成中文
         translator.start("See you tomorrow");

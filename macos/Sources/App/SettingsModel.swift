@@ -9,7 +9,7 @@ import AVFoundation
 import CMyType
 
 enum SettingsPage: String, CaseIterable, Identifiable {
-    case general, input, statistics, emoji, voice, translate, words, about
+    case general, input, statistics, learning, emoji, voice, translate, words, about
 
     var id: String { rawValue }
 
@@ -18,6 +18,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .general: return "常规"
         case .input: return "输入"
         case .statistics: return "输入统计"
+        case .learning: return "学习"
         case .emoji: return "表情"
         case .voice: return "语音"
         case .translate: return "翻译"
@@ -32,6 +33,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .general: return "gearshape"
         case .input: return "keyboard"
         case .statistics: return "chart.bar.xaxis"
+        case .learning: return "lightbulb"
         case .emoji: return "face.smiling"
         case .voice: return "mic"
         case .translate: return "character.bubble"
@@ -60,6 +62,7 @@ final class SettingsModel: ObservableObject {
     @Published private(set) var words: [CustomWords.Entry] = []
     @Published private(set) var toast: SettingsToast?
     @Published private(set) var inputDays: [InputStatistics.Day] = []
+    @Published private(set) var learningCounts = LearningData.Counts()
 
     // 「添加自定义词」的两个框：打词时自动填拼音，手改过编码就不再自动填（清空了又自动填）
     @Published var newWord = "" {
@@ -134,6 +137,7 @@ final class SettingsModel: ObservableObject {
         config = loaded
         customStamp = FileStamp(state.customWordsPath)
         words = CustomWords(text: readText(state.customWordsPath)).entries
+        learningCounts = LearningData.counts(in: supportDir)
     }
 
     private func quietly(_ body: () -> Void) {
@@ -149,6 +153,7 @@ final class SettingsModel: ObservableObject {
     func reload() {
         save()
         if page == .statistics { refreshInputStatistics() }
+        if page == .learning { refreshLearning() }
         // Key 也可能在输入法菜单的「设置互译 API Key…」里改过
         translateKeySet = !TranslateKeyFile.read(translateKeyPath).isEmpty
         if FileStamp(configPath) != configStamp {
@@ -163,8 +168,35 @@ final class SettingsModel: ObservableObject {
         }
     }
 
-    func refreshInputStatistics() {
-        inputDays = InputStatistics.read(in: supportDir).recentDays(14)
+    func refreshInputStatistics(days: Int = 14) {
+        inputDays = InputStatistics.read(in: supportDir).recentDays(days)
+    }
+
+    func refreshLearning() {
+        learningCounts = LearningData.counts(in: supportDir)
+    }
+
+    /// 清除自动学到的数据：写请求文件（输入法下一个键或通知时清内存），删掉现有文件，
+    /// 这样设置窗口立刻显示 0；输入法在跑的话会把空表再存回来。自定义词不动。
+    func clearLearningData() {
+        LearningData.requestReset(.learning, in: supportDir)
+        LearningData.removeLearningFiles(in: supportDir)
+        LearningData.postResetNotification(.learning)
+        refreshLearning()
+        showToast("学习数据已清除")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.refreshLearning() }
+    }
+
+    /// 清掉本机保存的每日输入统计。和清除学习数据一样用请求文件通知输入法。
+    func clearInputStatistics() {
+        LearningData.requestReset(.statistics, in: supportDir)
+        LearningData.removeStatisticsFile(in: supportDir)
+        LearningData.postResetNotification(.statistics)
+        refreshInputStatistics(days: max(inputDays.count, 14))
+        showToast("输入统计已清除")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.refreshInputStatistics(days: max(self?.inputDays.count ?? 14, 14))
+        }
     }
 
     private func scheduleSave() {

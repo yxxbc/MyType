@@ -1,6 +1,6 @@
 // 设置窗口的界面（SwiftUI，macOS 12 起）。
 //
-// 页面：常规、输入、表情、语音、翻译、自定义词、关于。
+// 页面：常规、输入、输入统计、学习、表情、语音、翻译、自定义词、关于。
 // 每行一个标题，副标题最多一行；说明、注意事项、例子、来源、许可放进 ⓘ（InfoButton）或「更多选项」折叠里。
 // 样子：薄荷绿渐变侧栏、绿色选中块、白色圆角卡片。
 
@@ -93,12 +93,45 @@ struct SettingsView: View {
         case .general: GeneralPage(model: model)
         case .input: InputPage(model: model)
         case .statistics: InputStatisticsPage(model: model)
+        case .learning: LearningPage(model: model)
         case .emoji: EmojiPage(model: model)
         case .voice: VoicePage(model: model)
         case .translate: TranslatePage(model: model)
         case .words: WordsPage(model: model)
         case .about: AboutPage(model: model)
         }
+    }
+}
+
+// MARK: 学习
+
+private struct LearningPage: View {
+    @ObservedObject var model: SettingsModel
+    @State private var confirmClear = false
+
+    var body: some View {
+        PrefGroup("自动学习", info: "只学习你用空格、数字键或鼠标确认上屏的候选；撤销的分段选词和直接上屏的原始拼音不算。\n\n"
+                  + "选够 3 次的词会收进用户词库；分几次选出来的四字以内的词用一次就记住。\n\n"
+                  + "已经学到的词会按使用热度排序，单字选一次只放到第二位，重复确认后才升到首位。") {
+            SwitchRow(title: "自动学习", subtitle: "选够 3 次的词收进用户词库",
+                      isOn: $model.config.autoLearn)
+        }
+
+        PrefGroup("已学数据") {
+            ActionRow(title: "学过的词",
+                      subtitle: "\(model.learningCounts.historyWords) 个选词 · \(model.learningCounts.userWords) 个用户词 · \(model.learningCounts.pairs) 个搭配")
+            RowDivider()
+            ActionRow(title: "清除学习数据",
+                      subtitle: "删掉自动学到的词、热度和搭配；自定义词不受影响",
+                      action: { confirmClear = true })
+        }
+        .confirmationDialog("清除学习数据？", isPresented: $confirmClear, titleVisibility: .visible) {
+            Button("清除", role: .destructive) { model.clearLearningData() }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("会删掉 user.tsv 和 history.tsv 里的内容，之后从头学习。自定义词（custom.tsv）和输入统计不受影响。")
+        }
+        .onAppear { model.refreshLearning() }
     }
 }
 
@@ -1139,6 +1172,11 @@ private struct ActionRow<Trailing: View>: View {
 private extension ActionRow where Trailing == EmptyView {
     init(title: String, subtitle: String? = nil, info: String? = nil, dim: Bool = false) {
         self.init(title: title, subtitle: subtitle, info: info, dim: dim, action: nil, trailing: { EmptyView() })
+    }
+
+    init(title: String, subtitle: String? = nil, info: String? = nil, dim: Bool = false,
+         action: @escaping () -> Void) {
+        self.init(title: title, subtitle: subtitle, info: info, dim: dim, action: action, trailing: { EmptyView() })
     }
 }
 

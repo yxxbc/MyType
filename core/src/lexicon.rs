@@ -1009,6 +1009,9 @@ pub struct UserLexicon {
     /// 全部自定义词按文件里的顺序（编码、词，词保留转义），给工具栏的「常用语」列表用。
     phrases: RwLock<Vec<(String, String)>>,
     snapshot: RwLock<Arc<MemoryLexicon>>,
+    /// 测试用：快照重建了几次（载入一份用户词库应该只有一次）。
+    #[cfg(test)]
+    rebuilds: std::sync::atomic::AtomicUsize,
 }
 
 /// 自定义词默认频次：和最常用的词差不多，所以排在同音词前面。
@@ -1023,6 +1026,8 @@ impl UserLexicon {
             codes: RwLock::new(Vec::new()),
             phrases: RwLock::new(Vec::new()),
             snapshot: RwLock::new(Arc::new(MemoryLexicon::new())),
+            #[cfg(test)]
+            rebuilds: std::sync::atomic::AtomicUsize::new(0),
         }
     }
 
@@ -1087,10 +1092,20 @@ impl UserLexicon {
     }
 
     /// 从 TSV 载入用户词，追加到现有内容。
+    ///
+    /// 整份先解析、最后只重建一次快照：以前每读一行都走 [`Self::add`]，而 `add`
+    /// 每次都会全量 `rebuild`，所以载入 n 行要做 n 次全量重建（5000 行实测 4.2 秒）；
+    /// 这段又会发生在主线程上（引擎回收后第一次聚焦、换词库时），表现为首键卡几秒。
     pub fn load_tsv<P: AsRef<Path>>(&self, path: P) -> Result<usize> {
         let data = fs::read_to_string(path.as_ref())
             .with_context(|| format!("读取用户词库失败: {}", path.as_ref().display()))?;
-        let mut added = 0;
+        Ok(self.extend_tsv(&data))
+    }
+
+    /// 从 TSV 文本追加用户词（[`Self::load_tsv`] 的实现），整批只重建一次。
+    /// 拼音不合法的行和 [`Self::add`] 一样跳过；同一个词出现多次时后面的行覆盖前面的。
+    fn extend_tsv(&self, data: &str) -> usize {
+        let mut parsed: Vec<(String, String, f64)> = Vec::new();
         for line in data.lines() {
             if line.trim().is_empty() || line.starts_with('#') {
                 continue;
@@ -1099,12 +1114,47 @@ impl UserLexicon {
             let (Some(pinyin), Some(word)) = (cols.next(), cols.next()) else {
                 continue;
             };
-            let freq = cols.next().and_then(|f| f.parse().ok()).unwrap_or(1000.0);
-            if self.add(pinyin, word, freq).is_ok() {
-                added += 1;
+            let pinyin = pinyin.trim();
+            if word.is_empty() || pinyin.is_empty() {
+                continue;
+            }
+            // 和 add 一致：拼音不合法的那一行跳过，别污染词库
+            if parse_pinyin_keys(pinyin).is_err() {
+                continue;
+            }
+            let freq = cols
+                .next()
+                .and_then(|f| f.trim().parse().ok())
+                .unwrap_or(1000.0);
+            parsed.push((pinyin.to_string(), word.to_string(), freq));
+        }
+        if parsed.is_empty() {
+            return 0;
+        }
+        let count = parsed.len();
+        {
+            let mut words = self.words.write().unwrap();
+            // 词到下标的索引：几千行的词库逐个 `find` 是 O(n²)，这里一遍建表再来一遍合并。
+            let mut slots: std::collections::HashMap<String, usize> = words
+                .iter()
+                .enumerate()
+                .map(|(i, (_, w, _))| (w.clone(), i))
+                .collect();
+            for (pinyin, word, freq) in parsed {
+                match slots.get(&word) {
+                    Some(&i) => {
+                        words[i].0 = pinyin;
+                        words[i].2 = freq;
+                    }
+                    None => {
+                        slots.insert(word.clone(), words.len());
+                        words.push((pinyin, word, freq));
+                    }
+                }
             }
         }
-        Ok(added)
+        self.rebuild();
+        count
     }
 
     /// 用一份自定义词整体替换现有的。格式 `编码<TAB>词[<TAB>频次]`。
@@ -1213,6 +1263,9 @@ impl UserLexicon {
     }
 
     fn rebuild(&self) {
+        #[cfg(test)]
+        self.rebuilds
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let mut words = self.words.read().map(|w| w.clone()).unwrap_or_default();
         words.extend(self.custom_words());
         let mut tsv = String::new();
@@ -2354,5 +2407,44 @@ mod tests {
         assert_eq!(freq("不坚硬"), 100.0);
         assert_eq!(freq("这个"), 100.0);
         assert_eq!(lex.total_freq, total);
+    }
+
+    fn user_lexicon() -> UserLexicon {
+        UserLexicon::new(Arc::new(lex()))
+    }
+
+    #[test]
+    fn loading_a_user_dictionary_rebuilds_the_snapshot_once() {
+        use std::sync::atomic::Ordering;
+        let lex = user_lexicon();
+        // 以前每读一行都 rebuild 一次，这里要保证整份载入只重建一次。
+        let body: String = (0..4000)
+            .map(|i| format!("ce shi\t测{}\t{}\n", i, 1000 + i))
+            .collect();
+        let path = temp_lexicon("user_batch", &body);
+        assert_eq!(lex.load_tsv(&path).unwrap(), 4000);
+        assert_eq!(lex.words().len(), 4000);
+        assert_eq!(lex.rebuilds.load(Ordering::Relaxed), 1);
+        // 快照真的能查到刚载入的词
+        let ce = Syllable::from_text("ce").unwrap();
+        let shi = Syllable::from_text("shi").unwrap();
+        let found = lex.lookup(&[ce.query(false), shi.query(false)]);
+        assert!(found.iter().any(|e| e.word == "测7"));
+        cleanup(&path);
+    }
+
+    #[test]
+    fn a_later_line_wins_for_the_same_word_and_bad_pinyin_is_skipped() {
+        use std::sync::atomic::Ordering;
+        let lex = user_lexicon();
+        let body = "ni hao\t你好\t10\nbu hao\t你好\t20\nqqq\t坏拼音\t30\n\t空拼音\t40\n";
+        let path = temp_lexicon("user_dupes", body);
+        assert_eq!(lex.load_tsv(&path).unwrap(), 2);
+        let words = lex.words();
+        assert_eq!(words.len(), 1, "同一个词只留一行");
+        assert_eq!(words[0].0, "bu hao", "后面的行覆盖前面的");
+        assert_eq!(words[0].2, 20.0);
+        assert_eq!(lex.rebuilds.load(Ordering::Relaxed), 1);
+        cleanup(&path);
     }
 }

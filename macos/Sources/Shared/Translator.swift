@@ -87,6 +87,12 @@ public final class Translator: TranslationBackend {
         mytype_translate_local_running(handle) == 1
     }
 
+    /// 停掉本地模型的 llama-server，但保留配置和模型设置：下次翻译时按需再起。
+    /// 内存压力、关掉互译时用（正在译的本地请求会被取消，已有的译文保留）。
+    public func releaseLocal() {
+        mytype_translate_release_local(handle)
+    }
+
     public func start(_ text: String) {
         mytype_translate_start(handle, text)
     }

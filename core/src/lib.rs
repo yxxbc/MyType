@@ -295,6 +295,11 @@ impl Engine {
 
     /// 学到的词收进用户词库。count 是选用次数，决定频次。
     fn add_learned_word(&self, word: &str, pinyin: &str, count: u32) {
+        // 自定义词是用户自己维护的，不从 custom.tsv 写回 user.tsv（否则删掉自定义词以后
+        // 它还会从用户词库冒出来，Ctrl+Delete 也删不掉）。热度照常记，下次还排前面。
+        if self.lexicon.is_custom(word) {
+            return;
+        }
         // 候选带的拼音已经是全拼（双拼也翻好了）；以前的前端会传双拼键位串（如 "vsgo"），
         // 那样的要先展开，否则用户词会带着一串无效音节存进去，永远也打不出来。
         let pinyin = if self.config.shuangpin && !pinyin.trim().contains(' ') {
@@ -486,6 +491,29 @@ impl Engine {
 
     pub fn set_typo_correction(&mut self, on: bool) {
         self.config.typo_correction = on;
+    }
+
+    /// 开关自动学习：选够阈值的词收进用户词库。只影响以后的学习，已经学到的词不动。
+    pub fn set_auto_learn(&mut self, on: bool) {
+        self.config.auto_learn = on;
+    }
+
+    /// 清除自动学到的数据：用户词库里的词、选词热度、搭配和上次的词都清掉，
+    /// 自定义词和基础词库不动。设置里「清除学习数据」和它对应。
+    pub fn clear_learning(&self) {
+        self.lexicon.clear();
+        if let Ok(mut history) = self.history.write() {
+            history.clear();
+        }
+        if let Ok(mut pairs) = self.pairs.write() {
+            pairs.clear();
+        }
+        if let Ok(mut last) = self.last_word.write() {
+            last.clear();
+        }
+        if let Ok(mut last) = self.last_words.write() {
+            last.clear();
+        }
     }
 
     /// 是否也出 CJK 扩展 B 区及以后的单字（默认不出，常见字体显示不了；通用规范汉字表里的照常）。
@@ -3578,6 +3606,60 @@ mod tests {
         assert_eq!(e.input("shi")[1].text, "时");
         e.record_selection_with_pinyin("时", Some("shi"));
         assert_eq!(e.input("shi")[0].text, "时");
+    }
+
+    #[test]
+    fn selected_custom_word_is_not_written_to_user_dict() {
+        let e = engine("ni hao\t你好\t10000\n");
+        e.lexicon().set_custom_tsv("zi jie tiao dong\t字节跳动\n");
+        for _ in 0..3 {
+            e.record_selection_with_pinyin("字节跳动", Some("zi jie tiao dong"));
+        }
+        assert!(
+            e.user_words().is_empty(),
+            "自定义词不该写回 user.tsv：{:?}",
+            e.user_words()
+        );
+        assert_eq!(e.history_count("字节跳动"), 3, "热度照常记");
+        assert_eq!(e.input("zijietiaodong")[0].text, "字节跳动", "自定义词照常能打");
+    }
+
+    #[test]
+    fn clear_learning_drops_user_words_and_history_but_keeps_custom() {
+        let e = engine("ni hao\t你好\t10000\n");
+        e.lexicon().set_custom_tsv("zi jie tiao dong\t字节跳动\n");
+        for _ in 0..3 {
+            e.record_selection_with_pinyin("我特", Some("wo te"));
+        }
+        e.record_selection_at("我特", now_ms());
+        // 造一个搭配：上一次选的词是「你」、光标前也是它
+        e.set_context("你");
+        e.record_selection_at("你", now_ms());
+        e.set_context("你");
+        e.record_selection_at("好", now_ms());
+        assert_eq!(e.user_words().len(), 1);
+        assert!(e.history_count("我特") > 0);
+        assert!(e.pair_count() > 0);
+
+        e.clear_learning();
+
+        assert!(e.user_words().is_empty(), "用户词清空");
+        assert_eq!(e.history_count("我特"), 0, "选词热度清空");
+        assert_eq!(e.pair_count(), 0, "搭配清空");
+        assert_eq!(e.input("zijietiaodong")[0].text, "字节跳动", "自定义词保留");
+    }
+
+    #[test]
+    fn auto_learn_setter_can_disable_learning() {
+        let mut e = engine("ni hao\t你好\t10000\n");
+        e.set_auto_learn(false);
+        for _ in 0..5 {
+            e.record_selection_with_pinyin("我特", Some("wo te"));
+        }
+        assert!(e.user_words().is_empty());
+        e.set_auto_learn(true);
+        e.record_selection_with_pinyin("我特", Some("wo te"));
+        assert_eq!(e.user_words().len(), 1, "打开后历史次数已经够，下一次就学");
     }
 
     #[test]

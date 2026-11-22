@@ -196,9 +196,22 @@ final class AppState {
         guard let translator else { return }
         // 手动建的 Key 文件权限可能太宽，收紧到只有自己能读
         TranslateKeyFile.tighten(translateKeyPath)
+        guard config.translate else {
+            // 关掉互译也要停掉本地模型的 llama-server（docs/CONFIG.md 的承诺）：
+            // 只停进程，配置和模型文件都留着，重新打开时按需再起。
+            translator.releaseLocal()
+            llamaServerInUse = ""
+            return
+        }
         llamaServerInUse = config.translateLocal ? findLlamaServer() : ""
         translator.configure(config, keyFile: translateKeyPath, defaultLocalModel: localModelPath,
                              llamaServer: llamaServerInUse)
+    }
+
+    /// 内存压力（main.swift 的内存压力源）：本地翻译模型的 llama-server 占 1.5 GB 左右，
+    /// 先停掉。配置和模型文件都留着，下次翻译时按需再起。
+    func reclaimLocalTranslation() {
+        translator?.releaseLocal()
     }
 
     private func translateSummary() -> String {
@@ -280,6 +293,9 @@ final class AppState {
         activeInputClient = client
         engineIdleWork?.cancel()
         engineIdleWork = nil
+        // 设置窗口在输入法没跑的时候点了「清除学习数据/统计」：请求文件还在，先处理
+        clearLearningIfRequested()
+        clearStatisticsIfRequested()
         if engine == nil && loading == nil { loadEngineInBackground() }
     }
 
@@ -313,7 +329,7 @@ final class AppState {
         if loading == nil { loadEngineInBackground() }
         guard let job = loading else { return }
         job.done.wait()
-        finishEngineLoad(job)
+        finishEngineLoad(job, waitForLearning: true)
     }
 
     private func loadEngineInBackground() {
@@ -337,19 +353,44 @@ final class AppState {
         }
     }
 
-    private func finishEngineLoad(_ job: EngineLoad) {
+    /// 底库载好了以后换上它。
+    ///
+    /// `waitForLearning` 只有隔离测试用（要同步返回）：输入法自己永远把读学习数据放到后台，
+    /// 因为 user.tsv 可能几千行、history.tsv 上万行，读在按键的主线程上会卡住首键。
+    /// 顺序不能变：先 `saveLearning()` 把旧引擎学到的落盘，再读进新引擎，否则会丢掉
+    /// 后台载入期间新学的词。读的这段时间 `loading` 还占着，别的路径不会同时再载入。
+    private func finishEngineLoad(_ job: EngineLoad, waitForLearning: Bool = false) {
         guard loading === job else { return }
-        loading = nil
         NSLog("MyType: 词库 %@ 载入%@，用时 %.1f 秒", job.path, job.result == nil ? "失败" : "完成",
               Date().timeIntervalSince(job.start))
-        // 等底库读完再移交学习数据：后台载入期间旧引擎还能继续学。
-        if let prepared = job.result, saveLearning() {
-            readLearning(into: prepared)
-            applyEngineSettings(prepared)
-            engine = prepared
-            lexiconInUse = job.path
-            lexiconStamp = job.stamp
+        guard let prepared = job.result, saveLearning() else {
+            loading = nil
+            afterEngineLoad()
+            return
         }
+        if waitForLearning {
+            readLearning(into: prepared)
+            installEngine(prepared, job)
+        } else {
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                // 只碰新引擎和用户数据文件，不和旧引擎并发
+                self?.readLearning(into: prepared)
+                DispatchQueue.main.async { self?.installEngine(prepared, job) }
+            }
+        }
+    }
+
+    private func installEngine(_ prepared: Engine, _ job: EngineLoad) {
+        guard loading === job else { return }
+        loading = nil
+        applyEngineSettings(prepared)
+        engine = prepared
+        lexiconInUse = job.path
+        lexiconStamp = job.stamp
+        afterEngineLoad()
+    }
+
+    private func afterEngineLoad() {
         if reloadAfterLoading {
             reloadAfterLoading = false
             checkForChanges(force: true)
@@ -373,6 +414,9 @@ final class AppState {
         let now = ProcessInfo.processInfo.systemUptime
         guard force || now - lastCheck >= 1 else { return }
         lastCheck = now
+        // 设置窗口的清除请求（它也会发通知；收不到时下一次按键兜底）
+        clearLearningIfRequested()
+        clearStatisticsIfRequested()
         if translator != nil && (force || llamaServerAppeared(now: now)) {
             // 切换输入框时再配一次（顺带收紧 Key 文件的权限）；本地模型的 llama-server 之前没找到、现在有了
             // （设置窗口里刚下好，或者后来才 brew install 的）也重配，不用切输入框。
@@ -482,6 +526,7 @@ final class AppState {
     }
 
     func recordInputStatistics(_ text: String) {
+        clearStatisticsIfRequested()
         guard config.inputStatistics else { return }
         let characters = InputStatistics.countHan(in: text)
         guard characters > 0 else { return }
@@ -498,6 +543,7 @@ final class AppState {
     private func saveStatistics() {
         statisticsSaveWork?.cancel()
         statisticsSaveWork = nil
+        clearStatisticsIfRequested()
         guard statisticsDirty, let inputStatistics else { return }
         do {
             try inputStatistics.write(in: supportDir)
@@ -508,15 +554,54 @@ final class AppState {
     }
 
     func save() {
+        // 退出前先处理设置里刚点的清除请求，别让旧数据又被写回去
+        clearLearningIfRequested()
+        clearStatisticsIfRequested()
         saveStatistics()
         _ = saveLearning()
     }
 
-    @discardableResult
-    private func saveLearning() -> Bool {
+    /// 设置里「清除学习数据」：清掉内存里的用户词、热度和搭配，再存一份空的。
+    /// 自定义词和基础词库不动。请求文件由设置窗口写，这里消费。
+    func clearLearning() {
+        LearningData.consumeReset(.learning, in: supportDir)
+        engine?.clearLearning()
+        commitsSinceSave = 0
         learningSaveWork?.cancel()
         learningSaveWork = nil
-        guard let engine, commitsSinceSave > 0 else { return true }
+        if engine != nil {
+            _ = saveLearning(force: true)
+        } else {
+            // 输入法没跑（或者还没载入词库）：直接删文件，下次启动就是空的
+            LearningData.removeLearningFiles(in: supportDir)
+        }
+    }
+
+    private func clearLearningIfRequested() {
+        guard LearningData.hasResetRequest(.learning, in: supportDir) else { return }
+        clearLearning()
+    }
+
+    /// 设置里「清除输入统计」：清掉内存里的日计数和待存数据，再删掉文件。
+    func clearStatistics() {
+        LearningData.consumeReset(.statistics, in: supportDir)
+        statisticsSaveWork?.cancel()
+        statisticsSaveWork = nil
+        statisticsDirty = false
+        inputStatistics = InputStatistics()
+        LearningData.removeStatisticsFile(in: supportDir)
+    }
+
+    private func clearStatisticsIfRequested() {
+        guard LearningData.hasResetRequest(.statistics, in: supportDir) else { return }
+        clearStatistics()
+    }
+
+    @discardableResult
+    private func saveLearning(force: Bool = false) -> Bool {
+        learningSaveWork?.cancel()
+        learningSaveWork = nil
+        guard let engine, force || commitsSinceSave > 0 else { return true }
         try? FileManager.default.createDirectory(at: supportDir, withIntermediateDirectories: true)
         let dictSaved = engine.saveUserDict(userDictPath)
         if !dictSaved {

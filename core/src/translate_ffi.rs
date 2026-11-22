@@ -139,6 +139,15 @@ pub unsafe extern "C" fn mytype_translate_local_running(
     }
 }
 
+/// 停掉本地模型的 llama-server（内存压力、关掉互译时用）：配置保留，下次翻译时按需再起。
+/// 正在跑的本地请求会被取消，已经译好的结果不动（ABI 1.12 起）。
+#[no_mangle]
+pub unsafe extern "C" fn mytype_translate_release_local(handle: *mut MyTypeTranslator) {
+    if let Some(handle) = unsafe { handle.as_mut() } {
+        handle.translator.release_local();
+    }
+}
+
 /// 填了地址和模型时返回 1。
 #[no_mangle]
 pub unsafe extern "C" fn mytype_translate_ready(handle: *const MyTypeTranslator) -> c_int {

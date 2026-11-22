@@ -121,6 +121,8 @@ public struct MyTypeConfig: Equatable {
     public var clipboardHistory = false
     /// 在本机记录每日上屏汉字数和次数，不记录原文。
     public var inputStatistics = false
+    /// 自动学习：选够次数的词收进用户词库（设置里可以关掉）。
+    public var autoLearn = true
     /// 语音输入：按住 voiceKey 说话，松开出字（模型在设置窗口里下载）
     public var voice = true
     /// 语音键，键名：Alt_R（右 Option）、Control_R、F8…；留空不用
@@ -272,7 +274,7 @@ public struct MyTypeConfig: Equatable {
         "WubiAutoCommit", "WubiHint", "ShiftToggle",
         "Traditional",
         "PunctuationStyle", "DateTime", "Calculator", "EmojiSuggest", "AutoSpace", "AutoSpaceLetters",
-        "AutoSpaceDigits", "Lexicon", "Toolbar", "ClipboardHistory", "InputStatistics", "Voice", "VoiceKey", "VoiceCopy",
+        "AutoSpaceDigits", "Lexicon", "Toolbar", "ClipboardHistory", "InputStatistics", "AutoLearn", "Voice", "VoiceKey", "VoiceCopy",
         "VoiceDuckPlayback", "EmojiKey",
         "ToggleKey", "TranslateModeKey", "CheckUpdate",
         "Translate", "TranslateTarget", "TranslateBaseUrl", "TranslateModel", "TranslateFormal", "TranslateLocal",
@@ -294,7 +296,7 @@ public struct MyTypeConfig: Equatable {
         "DateTime": \.dateTime, "Calculator": \.calculator, "EmojiSuggest": \.emojiSuggest,
         "AutoSpace": \.autoSpace, "AutoSpaceLetters": \.autoSpaceLetters, "AutoSpaceDigits": \.autoSpaceDigits,
         "Toolbar": \.toolbar, "ClipboardHistory": \.clipboardHistory, "Voice": \.voice, "VoiceCopy": \.voiceCopy,
-        "InputStatistics": \.inputStatistics,
+        "InputStatistics": \.inputStatistics, "AutoLearn": \.autoLearn,
         "VoiceDuckPlayback": \.voiceDuckPlayback,
         "Translate": \.translate, "TranslateFormal": \.translateFormal, "TranslateLocal": \.translateLocal,
         "CheckUpdate": \.checkUpdate,
@@ -564,6 +566,8 @@ public struct MyTypeConfig: Equatable {
         ClipboardHistory=\(b(d.clipboardHistory))
         # 每日上屏统计（只存本地计数，不存内容）
         InputStatistics=\(b(d.inputStatistics))
+        # 自动学习：选够 3 次的词自动收进用户词库（只学确认上屏的候选）
+        AutoLearn=\(b(d.autoLearn))
 
         # 语音输入：按住语音键说话，松开出字（点按一下也行，说完停一下自动结束）。模型在设置窗口「语音」页下载
         Voice=\(b(d.voice))

@@ -386,11 +386,21 @@ AppState.shared.loadConfig()
 let memoryPressure = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
 memoryPressure.setEventHandler {
     AppState.shared.reclaimIdleEngine()
+    AppState.shared.reclaimLocalTranslation()
     VoiceInput.shared.reclaimWhenIdle()
 }
 memoryPressure.resume()
+// 设置窗口的「清除学习数据/统计」通知：立即清内存；收不到时 checkForChanges 里有请求文件兜底。
+let clearLearningObserver = DistributedNotificationCenter.default().addObserver(
+    forName: LearningData.Kind.learning.notification, object: nil, queue: .main) { _ in
+    AppState.shared.clearLearning()
+}
+let clearStatisticsObserver = DistributedNotificationCenter.default().addObserver(
+    forName: LearningData.Kind.statistics.notification, object: nil, queue: .main) { _ in
+    AppState.shared.clearStatistics()
+}
 // 发布页有新版时在输入法菜单和设置「关于」页提示（最多一天查一次，不碰 GitHub API）
 Updater.shared.checkAutomatically(current: appVersion)
-withExtendedLifetime((server, memoryPressure)) {
+withExtendedLifetime((server, memoryPressure, clearLearningObserver, clearStatisticsObserver)) {
     app.run()
 }

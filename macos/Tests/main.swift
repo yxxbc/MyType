@@ -2056,6 +2056,7 @@ do {
 checkConfigContract()
 checkLexiconPackContract()
 checkInputStatistics()
+checkLearningData()
 
 if getenv("MYTYPE_EXPECT_FULL_CHARS") != nil {
     // 真实词库（补了雾凇大字表）：一个音节的字要列全，yi 有八百多个

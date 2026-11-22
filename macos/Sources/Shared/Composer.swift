@@ -78,6 +78,11 @@ public final class Engine {
         Int(mytype_engine_load_custom_words(handle, path))
     }
 
+    /// 清除自动学到的数据：用户词、选词热度和搭配；自定义词和基础词库不动。
+    public func clearLearning() {
+        _ = mytype_engine_clear_learning(handle)
+    }
+
     /// 简繁对照表载入过没有（繁体输出要用，第一次打开繁体时才读）。
     public private(set) var conversionLoaded = false
     /// 五笔码表载入过没有（选了五笔才读）。
@@ -97,6 +102,7 @@ public final class Engine {
             mytype_engine_set_shuangpin_scheme(handle, "ziranma")
         }
         mytype_engine_set_typo_correction(handle, config.typoCorrection ? 1 : 0)
+        mytype_engine_set_auto_learn(handle, config.autoLearn ? 1 : 0)
         mytype_engine_set_rare_ext_chars(handle, config.rareExtChars ? 1 : 0)
         if config.traditional && !conversionLoaded {
             if let conversion, mytype_engine_load_conversion(handle, conversion) > 0 {
