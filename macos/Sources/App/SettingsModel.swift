@@ -62,6 +62,8 @@ final class SettingsModel: ObservableObject {
     @Published private(set) var words: [CustomWords.Entry] = []
     @Published private(set) var toast: SettingsToast?
     @Published private(set) var inputDays: [InputStatistics.Day] = []
+    /// 统计页当前选的天数；切走窗口再回来时 `reload` 要按这个范围重读，不能回到 14。
+    @Published private(set) var statisticsDays = 14
     @Published private(set) var learningCounts = LearningData.Counts()
 
     // 「添加自定义词」的两个框：打词时自动填拼音，手改过编码就不再自动填（清空了又自动填）
@@ -152,7 +154,7 @@ final class SettingsModel: ObservableObject {
     /// 切回窗口时：文件在别处改了（文本编辑、同步）就重新读。窗口里还没写的先写（只写改过的键，不会盖掉别处的）。
     func reload() {
         save()
-        if page == .statistics { refreshInputStatistics() }
+        if page == .statistics { refreshInputStatistics(days: statisticsDays) }
         if page == .learning { refreshLearning() }
         // Key 也可能在输入法菜单的「设置互译 API Key…」里改过
         translateKeySet = !TranslateKeyFile.read(translateKeyPath).isEmpty
@@ -169,6 +171,7 @@ final class SettingsModel: ObservableObject {
     }
 
     func refreshInputStatistics(days: Int = 14) {
+        statisticsDays = days
         inputDays = InputStatistics.read(in: supportDir).recentDays(days)
     }
 
