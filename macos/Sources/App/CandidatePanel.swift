@@ -280,6 +280,11 @@ struct CandidateLayout {
         }
         size = NSSize(width: right + Self.inset.width, height: bottom + Self.inset.height)
     }
+
+    /// 鼠标点在哪个候选上（`cells` 的顺序就是这一页候选项的顺序）。点在空白处是 nil。
+    func cellIndex(at point: NSPoint) -> Int? {
+        cells.firstIndex { $0.frame.contains(point) }
+    }
 }
 
 /// 照 CandidateLayout 画候选框。颜色按自己的外观（跟着系统的浅色 / 深色）挑。
@@ -287,8 +292,21 @@ final class CandidateView: NSView {
     var layout: CandidateLayout? {
         didSet { needsDisplay = true }
     }
+    /// 鼠标点了这一页的第几个候选（由 CandidatePanel 转成会话的 select）。
+    var onSelect: ((Int) -> Void)?
 
     override var isFlipped: Bool { true }
+
+    /// 输入法不是活动程序时第一下点击也要落在候选上（和系统候选框一样）。
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        guard let layout else { return }
+        let point = convert(event.locationInWindow, from: nil)
+        if let index = layout.cellIndex(at: point) {
+            onSelect?(index)
+        }
+    }
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
@@ -378,9 +396,19 @@ final class CandidateView: NSView {
     }
 }
 
+/// 候选框窗口：能点候选，但不抢焦点（`canBecomeKey` 为 false）。
+private final class CandidateWindow: NSPanel {
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+}
+
 final class CandidatePanel {
     private let panel: NSPanel
     private let view = CandidateView()
+    /// 点了第 index 个候选；由当前输入控制器接到 Composer.select。
+    var onSelect: ((Int) -> Void)? {
+        didSet { view.onSelect = onSelect }
+    }
     /// 候选的字号（磅）；序号小一号
     var fontSize: CGFloat = 17
     /// 输入框这一行和候选框之间
@@ -391,21 +419,24 @@ final class CandidatePanel {
     var onScreen = true
 
     init() {
-        panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 100, height: 30),
-                        styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: true)
+        panel = CandidateWindow(contentRect: NSRect(x: 0, y: 0, width: 100, height: 30),
+                                styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: true)
         panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.cursorWindow)) - 1)
         // 窗口本身透明，圆角框由 CandidateView 画；系统按画出来的形状投影
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.hidesOnDeactivate = false
-        panel.ignoresMouseEvents = true
+        // 可以点候选，但窗口不成为 key/main，不影响当前输入框的焦点
+        panel.ignoresMouseEvents = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
         panel.contentView = view
     }
 
     func hide() {
         layout = nil
+        view.layout = nil
+        onSelect = nil
         panel.orderOut(nil)
     }
 

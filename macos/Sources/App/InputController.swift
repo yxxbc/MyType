@@ -297,6 +297,9 @@ extension MyTypeInputController: TextClient {
             panel.hide()
             return
         }
+        // 候选框是所有输入框共用的：每次显示时把点击接给当前这个控制器。
+        // 点的是这一页里的第几个，Composer.select 会按当前页和展开面板换算。
+        panel.onSelect = { [weak self] index in self?.composer.select(index) }
         panel.show(page, below: caretLine())
     }
 

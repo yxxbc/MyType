@@ -7,6 +7,20 @@ func runAppTests() {
     testConfigMigration()
     testUpdateWithLocalRelease()
     testInputLifecycle()
+    testCandidateHitTesting()
+}
+
+/// 候选框的鼠标命中：`cells` 的第 i 个就是这一页第 i 个候选，空白处不误触。
+private func testCandidateHitTesting() {
+    let page = CandidatePage(texts: ["你好", "尼好", "你号"], cursor: 1,
+                             hasPrev: false, hasNext: true, expanded: false)
+    let layout = CandidateLayout(page: page, fontSize: 17)
+    check(layout.cells.count == 3, "鼠标：三个候选三个可点区域", "\(layout.cells.count)")
+    for (i, cell) in layout.cells.enumerated() {
+        let point = NSPoint(x: cell.frame.midX, y: cell.frame.midY)
+        check(layout.cellIndex(at: point) == i, "鼠标：第 \(i + 1) 个候选命中", "\(String(describing: layout.cellIndex(at: point)))")
+    }
+    check(layout.cellIndex(at: NSPoint(x: -100, y: -100)) == nil, "鼠标：候选外面的空白不选")
 }
 
 private func testInputLifecycle() {
