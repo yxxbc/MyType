@@ -8,6 +8,24 @@ func runAppTests() {
     testUpdateWithLocalRelease()
     testInputLifecycle()
     testCandidateHitTesting()
+    testLearningAndStatisticsClear()
+}
+
+/// 设置窗口的清除请求：清内存 + 存空文件；统计文件被删掉。
+private func testLearningAndStatisticsClear() {
+    let state = AppState.shared
+    let fm = FileManager.default
+    try? "ni hao\t你好\t1000\n".write(toFile: state.userDictPath, atomically: true, encoding: .utf8)
+    try? "w\t你好\t2\t1\np\t你好\t世界\t1\t2\n".write(toFile: state.historyPath, atomically: true, encoding: .utf8)
+    state.clearLearning()
+    check(LearningData.counts(in: state.supportDir) == LearningData.Counts(), "清除学习：文件和内存都清空")
+    check(!LearningData.hasResetRequest(.learning, in: state.supportDir), "清除学习：请求已消费")
+
+    let statistics = state.supportDir.appendingPathComponent(InputStatistics.fileName)
+    try? "{}".write(to: statistics, atomically: true, encoding: .utf8)
+    state.clearStatistics()
+    check(!fm.fileExists(atPath: statistics.path), "清除统计：文件删掉")
+    check(!LearningData.hasResetRequest(.statistics, in: state.supportDir), "清除统计：请求已消费")
 }
 
 /// 候选框的鼠标命中：`cells` 的第 i 个就是这一页第 i 个候选，空白处不误触。

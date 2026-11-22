@@ -66,7 +66,7 @@ di zhi	四川省\n宜宾市
   设置里能删。它要 macOS 13.3 以上；更老的系统自己装 llama.cpp（`brew install llama.cpp`）。
 - 找 `llama-server` 的顺序：设置里填的路径 → 数据目录下载的那份 → `/opt/homebrew/bin`、`/usr/local/bin`、`/opt/local/bin`。
 - 第一次翻译时才启动 `llama-server`（只监听 127.0.0.1 的随机端口，载入要几秒），
-  闲置 `TranslateIdleMinutes` 分钟（默认 5）后停掉，内存还回去；关掉互译或退出输入法时也停。
+  闲置 `TranslateIdleMinutes` 分钟（默认 5）后停掉，内存还回去；关掉互译、系统内存压力或退出输入法时也停。
   翻译时 llama-server 占 1.5 GB 左右内存，一句话 1–3 秒。
 - **许可**：模型用的是腾讯混元社区许可协议（Tencent HY Community License），不是开源协议。
   它**不适用于欧盟、英国和韩国**；月活超过 1 亿的产品要另找腾讯授权。MyType 不分发这个模型，
@@ -112,6 +112,8 @@ Traditional=False
 PunctuationStyle=Fullwidth
 Toolbar=True
 ClipboardHistory=False
+InputStatistics=False
+AutoLearn=True
 Voice=True
 VoiceKey=Alt_R
 EmojiKey=Control+period
@@ -129,6 +131,7 @@ TranslateLocal=True
 | 输入 | `TypoCorrection`、`RareExtChars`、`InputScheme`、`ShuangpinScheme`、`ShuangpinShowKeys`、`WubiAutoCommit`、`WubiHint`、`ShiftToggle` | 按错键纠正、扩展 B 区生僻字、全拼 / 双拼 / 五笔 86、双拼方案、单按哪个 Shift 切中英文 |
 | 输出 | `Traditional`、`PunctuationStyle`、`DateTime`、`Calculator`、`EmojiSuggest`、`AutoSpace`、`AutoSpaceLetters`、`AutoSpaceDigits` | 繁体、全角 / 半角标点、日期时间、算式、emoji 推荐、中英文之间自动加空格 |
 | 词库 / 工具栏 | `Lexicon`、`Toolbar`、`ClipboardHistory` | 万象词库的路径、`v + 空格` 工具栏、剪贴板历史（默认关，只在内存里） |
+| 学习 / 统计 | `AutoLearn`、`InputStatistics` | 选够 3 次的词自动进用户词库（默认开）；每日汉字数和上屏次数（默认关，只在本机保存） |
 | 语音 | `Voice`、`VoiceKey`、`VoiceCopy` | 语音开关、语音键（默认右 Option `Alt_R`）、结果同时复制到剪贴板 |
 | 快捷键 | `EmojiKey`、`ToggleKey`、`TranslateModeKey` | 表情面板、切换中英文、进出「译」；留空不用。键名如 `Control+period`、`Control+Shift+space` |
 | 更新 | `CheckUpdate` | 启动后最多一天检查一次，有新版本在设置「关于」页提示 |
@@ -178,7 +181,8 @@ macOS 的输入法进程是系统启动的，**不读你 shell 里的环境变�
 | `mytype.conf` | 设置（本文） |
 | `custom.tsv` | 自定义词 / 常用语 |
 | `user.tsv` | 自动学到的词和词频 |
-| `history.tsv` | 输入习惯（上一个词、候选位置） |
+| `history.tsv` | 输入习惯（选词热度、词搭配） |
+| `input-statistics.json` | 每日汉字数、上屏次数（最多 90 天，设置 →「输入统计」可清除） |
 | `translate.key` | 互译的 API Key（0600） |
 | `dicts/wanxiang/` | 可选的万象词库 |
 | `wtlocal/` | 语音识别模型 |

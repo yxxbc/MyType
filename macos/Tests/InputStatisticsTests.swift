@@ -2,6 +2,12 @@ import Foundation
 
 func checkInputStatistics() {
     check(InputStatistics.countHan(in: "你好𠮷〇、ABC 123🧪かな") == 4, "统计：只数汉字（含扩展区）")
+    check(InputStatistics.retentionDays == 90, "统计：保留 90 天")
+    // 旧文件缺字段、甚至整个 counts 都没有时按 0 读，不要把整份统计弄丢
+    for text in ["{}", "{\"counts\":{}}"] {
+        let read = (try? JSONDecoder().decode(InputStatistics.self, from: Data(text.utf8))) ?? InputStatistics()
+        check(read.recentDays(1).last?.count == .init(), "统计：旧格式 $text 能读", text)
+    }
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
     let beforeDST = calendar.date(from: DateComponents(year: 2026, month: 3, day: 7, hour: 23))!

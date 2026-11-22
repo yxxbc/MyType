@@ -140,30 +140,42 @@ private struct LearningPage: View {
 private struct InputStatisticsPage: View {
     @ObservedObject var model: SettingsModel
     @Environment(\.palette) private var palette
+    /// 页面显示多少天；数据文件本身保留最近 90 天。
+    @State private var days = 14
+    @State private var confirmClear = false
 
     private var today: InputStatistics.Count { model.inputDays.last?.count ?? .init() }
     private var total: Int { model.inputDays.reduce(0) { $0 + $1.count.characters } }
     private var peak: Int { max(1, model.inputDays.map { $0.count.characters }.max() ?? 0) }
+    private var rangeTitle: String { "近 \(days) 天" }
 
     var body: some View {
         let scale = CGFloat(peak)
-        PrefGroup("近 14 天", description: "按本机日期统计经 MyType 上屏的汉字。只存计数，不保存原文或应用名称。") {
+        PrefGroup(rangeTitle, description: "按本机日期统计经 MyType 上屏的汉字。只存计数，不保存原文或应用名称；最多保留最近 \(InputStatistics.retentionDays) 天。") {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .firstTextBaseline, spacing: 22) {
                     metric(today.characters, "今日汉字")
                     metric(today.commits, "今日上屏次数")
-                    metric(total, "近 14 天汉字")
+                    metric(total, "近 \(days) 天汉字")
                 }
                 HStack(alignment: .bottom, spacing: 5) {
                     ForEach(model.inputDays) { day in
                         let isToday = day.id == model.inputDays.last?.id
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(day.count.characters == 0 ? palette.cardBorder : palette.accent.opacity(isToday ? 1 : 0.58))
-                            .frame(height: max(3, 76 * CGFloat(day.count.characters) / scale))
-                            .frame(maxWidth: .infinity)
-                            .help("\(day.date.formatted(date: .abbreviated, time: .omitted))：\(day.count.characters) 字，\(day.count.commits) 次")
-                            .accessibilityLabel(Text(day.date, style: .date))
-                            .accessibilityValue("\(day.count.characters) 字，\(day.count.commits) 次")
+                        Group {
+                            if day.count.characters == 0 {
+                                Circle()
+                                    .fill(palette.cardBorder)
+                                    .frame(width: 4, height: 4)
+                            } else {
+                                RoundedRectangle(cornerRadius: 3)
+                                    .fill(palette.accent.opacity(isToday ? 1 : 0.58))
+                                    .frame(height: max(3, 76 * CGFloat(day.count.characters) / scale))
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .bottom)
+                        .help("\(day.date.formatted(date: .abbreviated, time: .omitted))：\(day.count.characters) 字，\(day.count.commits) 次")
+                        .accessibilityLabel(Text(day.date, style: .date))
+                        .accessibilityValue("\(day.count.characters) 字，\(day.count.commits) 次")
                     }
                 }
                 .frame(height: 76, alignment: .bottom)
@@ -184,12 +196,32 @@ private struct InputStatisticsPage: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
+        } trailing: {
+            Picker("", selection: $days) {
+                ForEach([7, 14, 30, 90], id: \.self) { Text("\($0) 天").tag($0) }
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .tint(palette.accent)
+            .fixedSize()
         }
         PrefGroup("记录设置") {
-            SwitchRow(title: "记录输入统计", subtitle: "默认关闭；关闭后不再新增记录",
+            SwitchRow(title: "记录输入统计",
+                      subtitle: model.config.inputStatistics ? "正在记录；只在本机保存，最多保留 90 天"
+                                                          : "已关闭；已有数据保留，不会补算历史",
                       isOn: $model.config.inputStatistics)
+            RowDivider()
+            ActionRow(title: "清除输入统计", subtitle: "删除本机保存的每日计数",
+                      action: { confirmClear = true })
         }
-        .onAppear { model.refreshInputStatistics() }
+        .onAppear { model.refreshInputStatistics(days: days) }
+        .onChange(of: days) { model.refreshInputStatistics(days: $0) }
+        .confirmationDialog("清除输入统计？", isPresented: $confirmClear, titleVisibility: .visible) {
+            Button("清除", role: .destructive) { model.clearInputStatistics(days: days) }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("会删掉本机保存的每日汉字数和上屏次数，之后从头记录。学习数据和自定义词不受影响。")
+        }
     }
 
     private func metric(_ value: Int, _ title: String) -> some View {

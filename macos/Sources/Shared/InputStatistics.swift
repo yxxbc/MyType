@@ -14,8 +14,26 @@ struct InputStatistics: Codable {
     }
 
     static let fileName = "input-statistics.json"
-    private static let retention = 90
+    /// 保留最近多少天（设置页可以显示 7/14/30/90 天，超过这个数的旧数据会在下次写入时清掉）。
+    static let retentionDays = 90
     private var counts: [Int: Count] = [:]
+
+    init() {}
+
+    private enum CodingKeys: String, CodingKey {
+        case counts
+    }
+
+    /// 缺字段按 0 读：以后加了新字段，旧文件还能读出来，不至于整份统计归零。
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        counts = (try? container.decode([Int: Count].self, forKey: .counts)) ?? [:]
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(counts, forKey: .counts)
+    }
 
     static var localCalendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
@@ -54,7 +72,7 @@ struct InputStatistics: Codable {
         guard characters > 0 else { return }
         let key = Self.key(date, calendar)
         if counts[key] == nil,
-           let cutoff = calendar.date(byAdding: .day, value: -(Self.retention - 1), to: date) {
+           let cutoff = calendar.date(byAdding: .day, value: -(Self.retentionDays - 1), to: date) {
             let earliest = Self.key(cutoff, calendar)
             counts = counts.filter { $0.key >= earliest && $0.key <= key }
         }

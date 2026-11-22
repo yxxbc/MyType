@@ -188,14 +188,14 @@ final class SettingsModel: ObservableObject {
     }
 
     /// 清掉本机保存的每日输入统计。和清除学习数据一样用请求文件通知输入法。
-    func clearInputStatistics() {
+    func clearInputStatistics(days: Int = 14) {
         LearningData.requestReset(.statistics, in: supportDir)
         LearningData.removeStatisticsFile(in: supportDir)
         LearningData.postResetNotification(.statistics)
-        refreshInputStatistics(days: max(inputDays.count, 14))
+        refreshInputStatistics(days: days)
         showToast("输入统计已清除")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.refreshInputStatistics(days: max(self?.inputDays.count ?? 14, 14))
+            self?.refreshInputStatistics(days: days)
         }
     }
 
