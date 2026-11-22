@@ -630,6 +630,15 @@
       "note": "记录剪贴板历史（只在内存里）。默认关：分不出密码管理器复制的密码"
     },
     {
+      "key": "InputStatistics",
+      "type": "bool",
+      "default": false,
+      "platforms": [
+        "macos"
+      ],
+      "note": "在本机记录每日上屏汉字数和次数，不记录输入内容"
+    },
+    {
       "key": "AutoSpace",
       "type": "bool",
       "default": false,
@@ -699,6 +708,15 @@
         "macos"
       ],
       "note": "语音识别的结果同时复制到剪贴板"
+    },
+    {
+      "key": "VoiceDuckPlayback",
+      "type": "bool",
+      "default": true,
+      "platforms": [
+        "macos"
+      ],
+      "note": "macOS 14 起，语音录音时暂时压低后台音频"
     },
     {
       "key": "EmojiSuggest",

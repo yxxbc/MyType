@@ -349,7 +349,7 @@ public final class Composer {
     // MARK: 按键
 
     /// 处理一次按下；返回 true 表示吃掉了这个键（不交给应用）。
-    public func handle(_ key: KeyInput) -> Bool {
+    public func handle(_ key: KeyInput, preparingEngine: Bool = false) -> Bool {
         if key.release {
             return false
         }
@@ -381,8 +381,9 @@ public final class Composer {
         }
         let composing = isComposing
         if engine == nil && !composing {
-            // 词库还在后台载入：先什么都不吃，字母原样给应用
-            return false
+            // 词库在后台读时，先用原始拼音建立编辑区，不同步等待，也不漏首键。
+            guard preparingEngine, key.isLetter,
+                  key.modifiers.isDisjoint(with: [.control, .option, .command]) else { return false }
         }
         if !key.modifiers.isDisjoint(with: [.control, .option, .command]) {
             // 先问会话：打字途中 Ctrl+Delete、Ctrl+退格忘掉光标处学错的词。别的快捷键交给应用，

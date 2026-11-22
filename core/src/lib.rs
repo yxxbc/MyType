@@ -1910,7 +1910,12 @@ fn promote_picked(candidates: &mut Vec<Candidate>) {
         return;
     };
     let single = candidates[best].text.chars().count() <= 1;
-    let target = if single { 1 } else { 0 };
+    // 单字选一次先放到第二位，避免一次误选就换掉首选；短期重复确认后才允许排第一。
+    let target = if single && candidates[best].features.history_use_count <= 1.5 {
+        1
+    } else {
+        0
+    };
     if best <= target {
         return;
     }
@@ -3561,6 +3566,18 @@ mod tests {
             e.input("wote").iter().any(|c| c.text == "我特"),
             "自动学习后应当能打出 我特"
         );
+    }
+
+    #[test]
+    fn repeated_confirmation_can_promote_a_single_character_to_first() {
+        let lexicon = MemoryLexicon::from_tsv_str("shi\t是\t10000\nshi\t时\t1000\n").unwrap();
+        let e = Engine::new(Arc::new(lexicon), Arc::new(BigramLm::default()));
+        assert_eq!(e.input("shi")[0].text, "是");
+        e.record_selection_with_pinyin("时", Some("shi"));
+        assert_eq!(e.input("shi")[0].text, "是");
+        assert_eq!(e.input("shi")[1].text, "时");
+        e.record_selection_with_pinyin("时", Some("shi"));
+        assert_eq!(e.input("shi")[0].text, "时");
     }
 
     #[test]

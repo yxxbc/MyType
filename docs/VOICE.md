@@ -11,7 +11,7 @@ MyTypeInputController（输入法进程）
   ▼
 mytype_voice_key_down / key_up / poll / text / cancel   （core/src/voice_ffi.rs）
   │
-  ├─ 工作线程：cpal 开默认输入设备 → 16kHz 单声道 → 20ms 分帧 + 能量 VAD
+  ├─ 工作线程：Core Audio 语音处理（或 cpal）开默认输入设备 → 16kHz 单声道 → 20ms 分帧 + 能量 VAD
   │            → wtlocal 识别（边说边出中间结果）→ 松开后整段定稿
   └─ 模型线程：第一次按语音键时把模型读进内存，只做一次；没读完时音频先攒着
 ```
@@ -20,7 +20,7 @@ mytype_voice_key_down / key_up / poll / text / cancel   （core/src/voice_ffi.rs
 |---|---|---|
 | 外壳 | `macos/Sources/App/VoiceInput.swift` | 热键状态、编辑区里的中间结果、候选框里的麦克风和波形、上屏 / 取消 |
 | C 接口 | `core/src/voice_ffi.rs` | `mytype_voice_new/key_down/key_up/poll/text/model_state/cancel`；都不阻塞，外壳每 50ms 取一次状态 |
-| 采集 | `voice/src/capture.rs` | cpal，CoreAudio；优先直接要 16kHz 单声道，设备不支持时降混、低通、重采样 |
+| 采集 | `voice/src/capture.rs` | macOS 14+ 可用 VoiceProcessingIO 压低背景声，失败时退回 cpal；统一输出 16kHz 单声道 |
 | 分段 | `voice/src/audio.rs`、`vad.rs` | 重采样、320 样本定长帧、自适应噪声底 + 起始确认 100ms + 挂起 480ms |
 | 识别 | `voice/src/wtlocal/` | 微信输入法的离线模型，纯 Rust int8 推理，4 线程 |
 
@@ -47,6 +47,7 @@ mytype_voice_key_down / key_up / poll / text / cancel   （core/src/voice_ffi.rs
 - 结果只往开始说话的那个输入框上屏。
 - 没下载模型时按语音键只提示「去设置里下载」，不碰麦克风、不下载。设置里语音输入的开关在下载好模型前是灰的（显示为关）。
 - `VoiceCopy=True` 时说的话上屏后也复制到剪贴板（密码框里不复制）。
+- macOS 14 及以上默认在开麦时暂时压低音乐和视频等后台播放，并使用系统回声抑制。松开结束录音、静音自动结束或取消时恢复，不改系统音量，也不保证完全静音。可在「设置 → 语音」关闭「录音时降低其他声音」（`VoiceDuckPlayback=False`）；旧版 macOS 或不支持语音处理的设备继续用普通麦克风采集。
 
 ## 模型
 

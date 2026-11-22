@@ -92,12 +92,82 @@ struct SettingsView: View {
         switch model.page {
         case .general: GeneralPage(model: model)
         case .input: InputPage(model: model)
+        case .statistics: InputStatisticsPage(model: model)
         case .emoji: EmojiPage(model: model)
         case .voice: VoicePage(model: model)
         case .translate: TranslatePage(model: model)
         case .words: WordsPage(model: model)
         case .about: AboutPage(model: model)
         }
+    }
+}
+
+// MARK: 输入统计
+
+private struct InputStatisticsPage: View {
+    @ObservedObject var model: SettingsModel
+    @Environment(\.palette) private var palette
+
+    private var today: InputStatistics.Count { model.inputDays.last?.count ?? .init() }
+    private var total: Int { model.inputDays.reduce(0) { $0 + $1.count.characters } }
+    private var peak: Int { max(1, model.inputDays.map { $0.count.characters }.max() ?? 0) }
+
+    var body: some View {
+        let scale = CGFloat(peak)
+        PrefGroup("近 14 天", description: "按本机日期统计经 MyType 上屏的汉字。只存计数，不保存原文或应用名称。") {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .firstTextBaseline, spacing: 22) {
+                    metric(today.characters, "今日汉字")
+                    metric(today.commits, "今日上屏次数")
+                    metric(total, "近 14 天汉字")
+                }
+                HStack(alignment: .bottom, spacing: 5) {
+                    ForEach(model.inputDays) { day in
+                        let isToday = day.id == model.inputDays.last?.id
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(day.count.characters == 0 ? palette.cardBorder : palette.accent.opacity(isToday ? 1 : 0.58))
+                            .frame(height: max(3, 76 * CGFloat(day.count.characters) / scale))
+                            .frame(maxWidth: .infinity)
+                            .help("\(day.date.formatted(date: .abbreviated, time: .omitted))：\(day.count.characters) 字，\(day.count.commits) 次")
+                            .accessibilityLabel(Text(day.date, style: .date))
+                            .accessibilityValue("\(day.count.characters) 字，\(day.count.commits) 次")
+                    }
+                }
+                .frame(height: 76, alignment: .bottom)
+                HStack {
+                    if let first = model.inputDays.first {
+                        Text(first.date.formatted(.dateTime.month().day()))
+                    }
+                    Spacer()
+                    Text("今天")
+                }
+                .font(.caption)
+                .foregroundColor(.secondary)
+                if total == 0 {
+                    Text(model.config.inputStatistics ? "还没有统计数据。用 MyType 输入汉字后会显示在这里。" : "开启记录后才开始计数，不会补算历史。")
+                        .font(.callout)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+        }
+        PrefGroup("记录设置") {
+            SwitchRow(title: "记录输入统计", subtitle: "默认关闭；关闭后不再新增记录",
+                      isOn: $model.config.inputStatistics)
+        }
+        .onAppear { model.refreshInputStatistics() }
+    }
+
+    private func metric(_ value: Int, _ title: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(value.formatted())
+                .font(.system(size: 25, weight: .semibold, design: .monospaced))
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
+            Text(title).font(.caption).foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -548,6 +618,12 @@ private struct VoicePage: View {
             RowDivider()
             SwitchRow(title: "同时复制到剪贴板", isOn: $model.config.voiceCopy)
                 .disabled(!ready || !model.config.voice)
+            if #available(macOS 14.0, *) {
+                RowDivider()
+                SwitchRow(title: "录音时降低其他声音", subtitle: "结束录音后恢复，不改系统音量",
+                          isOn: $model.config.voiceDuckPlayback)
+                    .disabled(!ready || !model.config.voice)
+            }
         }
         PrefGroup("识别模型", info: "在本机识别，录音不上传。语音模型是微信输入法的离线语音包，属于腾讯，"
                   + "从腾讯的服务器下载，MyType 不分发它；和这台电脑装没装微信输入法无关。\n\n"

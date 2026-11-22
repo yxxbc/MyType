@@ -179,6 +179,7 @@ enum Msg {
 pub struct MyTypeVoice {
     dir: PathBuf,
     wav: Option<PathBuf>,
+    duck_playback: bool,
     model: Arc<ModelSlot>,
     shared: Arc<Mutex<Shared>>,
     trigger: VoiceTrigger,
@@ -192,6 +193,7 @@ impl MyTypeVoice {
         Self {
             dir,
             wav: std::env::var_os("MYTYPE_VOICE_WAV").map(PathBuf::from),
+            duck_playback: false,
             model: Arc::new(ModelSlot {
                 state: Mutex::new(ModelState::None),
                 changed: Condvar::new(),
@@ -250,6 +252,7 @@ impl MyTypeVoice {
             session: self.session,
             dir: self.dir.clone(),
             wav: self.wav.clone(),
+            duck_playback: self.duck_playback,
             model: self.model.clone(),
             shared: self.shared.clone(),
             tx: tx.clone(),
@@ -320,6 +323,7 @@ struct Worker {
     session: u64,
     dir: PathBuf,
     wav: Option<PathBuf>,
+    duck_playback: bool,
     model: Arc<ModelSlot>,
     shared: Arc<Mutex<Shared>>,
     tx: Sender<Msg>,
@@ -355,7 +359,7 @@ impl Worker {
             return Ok(Source::Wav);
         }
         let tx = self.tx.clone();
-        let capture = mytype_voice::capture::start(None, move |pcm| {
+        let capture = mytype_voice::capture::start_for_dictation(self.duck_playback, move |pcm| {
             let _ = tx.send(Msg::Pcm(pcm));
         })?;
         Ok(Source::Mic(capture))
@@ -522,6 +526,14 @@ pub unsafe extern "C" fn mytype_voice_free(voice: *mut MyTypeVoice) {
     if !voice.is_null() {
         let mut voice = unsafe { Box::from_raw(voice) };
         voice.cancel();
+    }
+}
+
+/// 影响下一次打开麦克风；WAV 回放不处理系统播放。
+#[no_mangle]
+pub unsafe extern "C" fn mytype_voice_set_duck_playback(voice: *mut MyTypeVoice, enabled: c_int) {
+    if let Some(voice) = unsafe { voice.as_mut() } {
+        voice.duck_playback = enabled != 0;
     }
 }
 

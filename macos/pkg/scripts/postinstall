@@ -27,24 +27,17 @@ fi
 
 bin="$app/Contents/MacOS/MyType"
 as_user "$bin" --register || echo "MyType postinstall: 登记失败"
-# 菜单栏的输入法菜单会缓存图标：升级换了图标时不重启它，菜单栏还是旧图标，要注销才变。系统会马上把它拉起来。
-as_user /usr/bin/killall TextInputMenuAgent 2>/dev/null || true
-# 刚登记完系统可能还没列出来，等一下再打开；打开以后菜单栏那边可能还是旧的，再刷一次
+# 登记可能异步完成；一旦确认启用，只尝试切换一次，不重启系统输入法菜单。
 for _ in 1 2 3 4 5 6 7 8; do
   if as_user "$bin" --enable >/dev/null 2>&1; then
-    as_user "$bin" --enable || true
-    sleep 1
-    as_user /usr/bin/killall TextInputMenuAgent 2>/dev/null || true
-    if as_user "$bin" --select >/dev/null 2>&1; then
-      as_user "$bin" --select || true
-    else
+    if ! as_user "$bin" --select; then
       echo "MyType postinstall: 装好了，菜单栏的输入法里选 MyType；没看到就到"
       echo "  系统设置 → 键盘 → 文字输入 → 输入法 → 编辑 → ＋ → 简体中文 → MyType 加一次"
     fi
-    echo "MyType postinstall: 已打开 $app"
+    echo "MyType postinstall: 已启用 $app"
     exit 0
   fi
   sleep 1
 done
-echo "MyType postinstall: 没能自动打开，要注销重新登录或到系统设置里添加"
+echo "MyType postinstall: 未能自动启用，请到系统设置里添加"
 exit 0

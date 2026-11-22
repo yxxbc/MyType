@@ -16,6 +16,8 @@ pub unsafe extern "C" fn mytype_voice_new(_model_dir: *const c_char) -> *mut MyT
 #[no_mangle]
 pub unsafe extern "C" fn mytype_voice_free(_voice: *mut MyTypeVoice) {}
 #[no_mangle]
+pub unsafe extern "C" fn mytype_voice_set_duck_playback(_voice: *mut MyTypeVoice, _enabled: c_int) {}
+#[no_mangle]
 pub unsafe extern "C" fn mytype_voice_key_down(_voice: *mut MyTypeVoice) {}
 #[no_mangle]
 pub unsafe extern "C" fn mytype_voice_key_up(_voice: *mut MyTypeVoice) {}

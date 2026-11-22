@@ -30,8 +30,10 @@ final class VoiceInput {
     static let pollInterval: TimeInterval = 0.05
 
     private var handle: OpaquePointer?
+    private var idleRelease: DispatchWorkItem?
     private(set) var key: VoiceKey?
     private var copyResult = false
+    private var duckPlayback = false
     private var modelDir = ""
     /// 没下载模型时按下了语音键（修饰键）：松开前没按别的键才提示去下载，
     /// 免得 Option+方向键 这些常用组合每次都闪一下提示
@@ -66,17 +68,36 @@ final class VoiceInput {
     /// 照设置配语音键；第一次要用时才建核心的语音对象（不碰麦克风、不读模型，按键时才读）。
     func configure(_ config: MyTypeConfig, modelDir: String) {
         let wanted = config.voice ? VoiceKey(name: config.voiceKey) : nil
-        if wanted != key {
+        if wanted != key || self.modelDir != modelDir {
             if showing { cancel() }
             keyDown = false
+            pendingHint = false
         }
+        if wanted == nil || self.modelDir != modelDir { releaseHandle() }
         key = wanted
         copyResult = config.voiceCopy
+        if #available(macOS 14.0, *) { duckPlayback = config.voiceDuckPlayback }
         self.modelDir = modelDir
-        if key != nil && handle == nil {
-            handle = mytype_voice_new(modelDir)
-        }
         vlog("configure voice=\(config.voice) key=\(config.voiceKey) model=\(modelDir) ready=\(VoiceModelInstaller.isReady(URL(fileURLWithPath: modelDir))) handle=\(handle != nil)")
+    }
+
+    private func releaseHandle() {
+        idleRelease?.cancel()
+        idleRelease = nil
+        if let handle { mytype_voice_free(handle) }
+        handle = nil
+    }
+
+    func reclaimWhenIdle() {
+        if !showing { releaseHandle() }
+    }
+
+    private func prepareHandle() -> OpaquePointer? {
+        idleRelease?.cancel()
+        idleRelease = nil
+        if handle == nil { handle = mytype_voice_new(modelDir) }
+        if let handle { mytype_voice_set_duck_playback(handle, duckPlayback ? 1 : 0) }
+        return handle
     }
 
     var isActive: Bool { showing }
@@ -122,10 +143,7 @@ final class VoiceInput {
     }
 
     private func press(down: Bool, composing: Bool, host: VoiceHost) -> Bool {
-        guard let handle, let key else {
-            vlog("press down=\(down) 没 handle/key")
-            return false
-        }
+        guard let key else { return false }
         let auth = AVCaptureDevice.authorizationStatus(for: .audio).rawValue
         vlog("press down=\(down) auth=\(auth) ready=\(VoiceModelInstaller.isReady(URL(fileURLWithPath: modelDir))) key=\(key.name) keyDown=\(keyDown) showing=\(showing) composing=\(composing) model=\(modelDir)")
         if !VoiceModelInstaller.isReady(URL(fileURLWithPath: modelDir)) {
@@ -139,6 +157,7 @@ final class VoiceInput {
                 return false
             }
             pendingHint = false
+            guard let handle = prepareHandle() else { return false }
             if showing && self.host !== host { cancel() }
             self.host = host
             showing = true
@@ -152,7 +171,7 @@ final class VoiceInput {
         if !down {
             guard keyDown else { return false }
             keyDown = false
-            if showing && self.host === host {
+            if let handle, showing && self.host === host {
                 mytype_voice_key_up(handle)
                 poll()
             }
@@ -178,6 +197,7 @@ final class VoiceInput {
             hint("麦克风没打开：系统设置 → 隐私与安全性 → 麦克风，打开 MyType", host: host)
             return true
         }
+        guard let handle = prepareHandle() else { return false }
         keyDown = true
         if !showing {
             self.host = host
@@ -218,10 +238,15 @@ final class VoiceInput {
     /// 取一次状态，画出来；返回 false 表示不用再取了。
     @discardableResult
     private func poll() -> Bool {
-        guard let handle, showing else { return false }
+        guard showing else { return false }
         guard let host else {
             // 输入框没了
             cancel()
+            return false
+        }
+        guard let handle else {
+            if ProcessInfo.processInfo.systemUptime < holdUntil { return true }
+            finish()
             return false
         }
         let phase = Int(mytype_voice_poll(handle))
@@ -279,5 +304,11 @@ final class VoiceInput {
             host?.voiceShow(.hidden)
         }
         host = nil
+        if handle != nil {
+            idleRelease?.cancel()
+            let work = DispatchWorkItem { [weak self] in self?.reclaimWhenIdle() }
+            idleRelease = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 120, execute: work)
+        }
     }
 }

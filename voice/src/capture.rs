@@ -9,6 +9,9 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 use crate::audio::{downmix, to_i16, Resampler, TARGET_RATE};
 
+#[cfg(target_os = "macos")]
+mod voice_io;
+
 /// 采集信息（用于日志和调试）。
 #[derive(Clone, Debug)]
 pub struct CaptureInfo {
@@ -20,8 +23,47 @@ pub struct CaptureInfo {
 
 /// 持有 stream 的句柄；丢弃即停止采集。
 pub struct Capture {
-    _stream: cpal::Stream,
+    _stream: Stream,
     pub info: CaptureInfo,
+}
+
+#[allow(dead_code)]
+enum Stream {
+    Raw(cpal::Stream),
+    #[cfg(target_os = "macos")]
+    Processed(voice_io::VoiceIo),
+}
+
+/// 语音输入可用系统的回声抑制和后台音量压低；不支持时仍用原来的麦克风。
+pub fn start_for_dictation<F>(duck_playback: bool, on_pcm: F) -> Result<Capture>
+where
+    F: FnMut(Vec<i16>) + Send + 'static,
+{
+    #[cfg(target_os = "macos")]
+    if duck_playback {
+        let sink = Arc::new(Mutex::new(on_pcm));
+        let processed_sink = sink.clone();
+        match voice_io::start(move |pcm| {
+            if let Ok(mut f) = processed_sink.lock() {
+                f(pcm);
+            }
+        }) {
+            Ok((stream, info)) => {
+                return Ok(Capture {
+                    _stream: Stream::Processed(stream),
+                    info,
+                });
+            }
+            Err(err) => eprintln!("语音处理不可用，改用普通麦克风：{err:#}"),
+        }
+        return start(None, move |pcm| {
+            if let Ok(mut f) = sink.lock() {
+                f(pcm);
+            }
+        });
+    }
+    let _ = duck_playback;
+    start(None, on_pcm)
 }
 
 /// 列出可用的录音设备名。
@@ -152,7 +194,7 @@ where
 
     stream.play().context("启动录音流失败")?;
     Ok(Capture {
-        _stream: stream,
+        _stream: Stream::Raw(stream),
         info,
     })
 }

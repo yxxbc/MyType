@@ -2725,6 +2725,7 @@ impl<'e> Session<'e> {
         match chosen.kind {
             CandidateKind::Emoji => {
                 let text = self.selected_text() + &chosen.commit;
+                self.learn_committed_prefixes();
                 self.finish(text);
                 // 打字推荐的 emoji：记进最近用过（表情面板里排最前）
                 crate::recent_emoji::remember(&chosen.emoji);
@@ -2732,12 +2733,12 @@ impl<'e> Session<'e> {
             }
             CandidateKind::Plain if chosen.consumed >= remaining => {
                 let text = self.selected_text() + &chosen.text;
+                self.learn_committed_prefixes();
                 self.finish(text);
                 self.last_choice = Some(chosen);
             }
             _ if chosen.consumed < remaining => {
                 // 句首词：先放进已选栈，剩下的拼音继续选
-                self.learn(&chosen.text, &chosen.pinyin);
                 self.push_selection(Selection {
                     plain: self.plain_of(&chosen.text),
                     text: chosen.text,
@@ -2753,7 +2754,7 @@ impl<'e> Session<'e> {
         true
     }
 
-    /// 上屏已选的词 + 还没选的原始输入，原始输入也记一次选词（和回车、`reset(true)` 一样）。
+    /// 上屏已选的词 + 还没选的原始输入。原始输入不是选词，不学。
     pub fn commit_input(&mut self) -> Frame {
         self.last_choice = None;
         self.commit_input_now();
@@ -2768,16 +2769,11 @@ impl<'e> Session<'e> {
     /// 已选的词 + tail 上屏，记选词，清空。
     fn commit_with(&mut self, tail: &str, tail_pinyin: &str) {
         let text = self.selected_text() + tail;
-        if self.engine.is_some() && !text.is_empty() && !self.wubi() {
-            self.learned = true;
-            if !tail.is_empty() {
-                // 带上拼音：选够次数后引擎会自动把这个词收进用户词库
-                self.learn(tail, tail_pinyin);
-            }
+        let context = self.learn_committed_prefixes();
+        if self.engine.is_some() && !self.wubi() && !tail.is_empty() && !tail_pinyin.is_empty() {
+            self.learned |= self.learn(tail, tail_pinyin, &context);
             // 以词定字取出来的字对不上读音时拼音是空的，这样拼成的不学
             if !self.selections.is_empty()
-                && !tail.is_empty()
-                && !tail_pinyin.is_empty()
                 && self.selections.iter().all(|s| !s.pinyin.is_empty())
             {
                 // 分几次选出来的也记一次，下次能一次打出来。四个字以内的当成用户造的词，
@@ -2801,15 +2797,30 @@ impl<'e> Session<'e> {
         self.finish(text);
     }
 
-    /// 记一次选词。上文和算候选时一样（已上屏的字 + 已选的词）。
+    /// 只在上屏时学已经选定的片段。可退格撤销的候选不能污染用户词频。
+    fn learn_committed_prefixes(&mut self) -> String {
+        let mut context = self.context.clone();
+        for selection in &self.selections {
+            let plain = if selection.plain.is_empty() {
+                &selection.text
+            } else {
+                &selection.plain
+            };
+            self.learned |= self.learn(plain, &selection.pinyin, &context);
+            context.push_str(&selection.text);
+        }
+        context
+    }
+
+    /// 记一次已确认的选词。上文和算候选时一样（已上屏的字 + 已选的词）。
     /// 五笔（连同临时拼音）什么都不学：码位固定，选的词也不该进拼音的选词热度和用户词库。
-    fn learn(&self, word: &str, pinyin: &str) {
-        let Some(engine) = self.engine.filter(|_| !self.wubi()) else {
-            return;
+    fn learn(&self, word: &str, pinyin: &str, context: &str) -> bool {
+        let Some(engine) = self.engine.filter(|_| !self.wubi() && !pinyin.is_empty()) else {
+            return false;
         };
-        let context = self.context.clone() + &self.selected_text();
-        engine.set_context(utf8_tail(&context, CONTEXT_BYTES));
-        engine.record_selection_with_pinyin(word, Some(pinyin).filter(|p| !p.is_empty()));
+        engine.set_context(utf8_tail(context, CONTEXT_BYTES));
+        engine.record_selection_with_pinyin(word, Some(pinyin));
+        true
     }
 
     /// 候选在词库里的写法（开着繁体时候选是转换过的），见 [`Engine::lexicon_form`]。
@@ -2998,6 +3009,8 @@ pub fn system_time() -> Option<LocalTime> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{BigramLm, MemoryLexicon};
+    use std::sync::Arc;
 
     fn typed(keys: &str) -> Session<'static> {
         let mut session = Session::new();
@@ -3005,6 +3018,34 @@ mod tests {
             session.key(&Key::char(c));
         }
         session
+    }
+
+    #[test]
+    fn learning_waits_for_commit_and_ignores_raw_pinyin() {
+        let lexicon = MemoryLexicon::from_tsv_str("ni\t你\t40000\nhao\t好\t40000\n").unwrap();
+        let engine = Engine::new(Arc::new(lexicon), Arc::new(BigramLm::default()));
+        let mut session = Session::with_engine(&engine);
+        for cancel in [true, false] {
+            for c in "nihao".chars() {
+                session.key(&Key::char(c));
+            }
+            let prefix = session
+                .candidates()
+                .iter()
+                .position(|c| c.text == "你")
+                .unwrap();
+            assert!(session.choose(prefix).commit.is_none());
+            assert_eq!(engine.history_count("你"), 0);
+            if cancel {
+                session.reset(false);
+                assert_eq!(engine.history_count("你"), 0);
+            }
+        }
+        let frame = session.commit_input();
+        assert_eq!(frame.commit.as_deref(), Some("你hao"));
+        assert!(frame.learned);
+        assert_eq!(engine.history_count("你"), 1);
+        assert_eq!(engine.history_count("hao"), 0);
     }
 
     #[test]

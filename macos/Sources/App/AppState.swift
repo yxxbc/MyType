@@ -7,10 +7,29 @@ final class AppState {
 
     /// 后台载入完成前是 nil；输入控制器每次按键时来取（换词库时换成新的）。
     private(set) var engine: Engine?
-    private var loading = false
+    private final class EngineLoad {
+        let done = DispatchGroup()
+        let path: String
+        let stamp: FileStamp?
+        let start = Date()
+        var result: Engine?
+
+        init(path: String) {
+            self.path = path
+            stamp = FileStamp(path)
+        }
+    }
+    private var loading: EngineLoad?
+    private weak var activeInputClient: MyTypeInputController?
+    var isPreparingEngine: Bool { loading != nil && engine == nil }
+    private var engineIdleWork: DispatchWorkItem?
+    private var inputStatistics: InputStatistics?
+    private var statisticsDirty = false
+    private var statisticsSaveWork: DispatchWorkItem?
     /// 载入途中设置又换了词库：载完再看一次
     private var reloadAfterLoading = false
     private var commitsSinceSave = 0
+    private var learningSaveWork: DispatchWorkItem?
     /// 每上屏这么多次存一次（系统可能随时杀掉输入法进程）。
     private let saveEvery = 20
 
@@ -216,7 +235,7 @@ final class AppState {
     }
 
     /// 同步载入（自检和后台线程用）。只读文件，设置在主线程上由 install 套上。
-    func makeEngine(lexicon: String) -> Engine? {
+    func makeEngine(lexicon: String, loadLearning: Bool = true) -> Engine? {
         try? FileManager.default.createDirectory(at: supportDir, withIntermediateDirectories: true)
         guard let engine = Engine(lexicon: lexicon, languageModel: resource("words.lm"))
             ?? Engine(lexicon: lexicon)
@@ -236,9 +255,13 @@ final class AppState {
                 NSLog("MyType: 领域词级模型载入失败 %@", domain)
             }
         }
+        if loadLearning { readLearning(into: engine) }
+        return engine
+    }
+
+    private func readLearning(into engine: Engine) {
         engine.loadUserDict(userDictPath)
         engine.loadHistory(historyPath)
-        return engine
     }
 
     /// 自检用：读设置、载入词库、套上设置。
@@ -253,43 +276,86 @@ final class AppState {
         return engine
     }
 
-    /// 启动时调用：词库有几十 MB，放后台读，读完再交给输入控制器。
-    func loadEngineInBackground() {
+    func activateInputClient(_ client: MyTypeInputController) {
+        activeInputClient = client
+        engineIdleWork?.cancel()
+        engineIdleWork = nil
+        if engine == nil && loading == nil { loadEngineInBackground() }
+    }
+
+    func deactivateInputClient(_ client: MyTypeInputController) {
+        guard activeInputClient === client else { return }
+        activeInputClient = nil
+        scheduleEngineReclaim()
+    }
+
+    private func scheduleEngineReclaim() {
+        engineIdleWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.reclaimIdleEngine() }
+        engineIdleWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 120, execute: work)
+    }
+
+    func reclaimIdleEngine() {
+        guard activeInputClient == nil, loading == nil else { return }
+        engineIdleWork?.cancel()
+        engineIdleWork = nil
+        // 写失败先保留引擎，下次再试，不能把未落盘的用户词扔掉。
+        guard saveLearning() else { scheduleEngineReclaim(); return }
+        engine = nil
+        lexiconInUse = nil
+        lexiconStamp = nil
+    }
+
+    /// 隔离测试的同步入口。输入法自身只走后台载入。
+    func waitForEngine() {
+        guard engine == nil else { return }
+        if loading == nil { loadEngineInBackground() }
+        guard let job = loading else { return }
+        job.done.wait()
+        finishEngineLoad(job)
+    }
+
+    private func loadEngineInBackground() {
         if configGeneration == 0 {
             loadConfig()
         }
-        guard !loading else {
-            reloadAfterLoading = true
-            return
-        }
+        guard loading == nil else { return }
         guard let lexicon = lexiconPath() else {
             NSLog("MyType: 安装包里没有 lexicon.tsv")
             return
         }
-        // 换词库：新引擎要读学习数据，先把旧引擎学到的存下来（载入途中学的就丢了，最多几秒）
-        save(force: true)
-        loading = true
-        let stamp = FileStamp(lexicon)
-        let start = Date()
+        let job = EngineLoad(path: lexicon)
+        loading = job
+        job.done.enter()
         DispatchQueue.global(qos: .userInitiated).async {
-            let engine = self.makeEngine(lexicon: lexicon)
+            job.result = self.makeEngine(lexicon: lexicon, loadLearning: false)
+            job.done.leave()
             DispatchQueue.main.async {
-                self.loading = false
-                NSLog("MyType: 词库 %@ 载入%@，用时 %.1f 秒", lexicon, engine == nil ? "失败" : "完成",
-                      Date().timeIntervalSince(start))
-                if let engine {
-                    self.applyEngineSettings(engine)
-                    self.engine = engine
-                    self.commitsSinceSave = 0
-                    self.lexiconInUse = lexicon
-                    self.lexiconStamp = stamp
-                }
-                if self.reloadAfterLoading {
-                    self.reloadAfterLoading = false
-                    self.checkForChanges(force: true)
-                }
+                self.finishEngineLoad(job)
             }
         }
+    }
+
+    private func finishEngineLoad(_ job: EngineLoad) {
+        guard loading === job else { return }
+        loading = nil
+        NSLog("MyType: 词库 %@ 载入%@，用时 %.1f 秒", job.path, job.result == nil ? "失败" : "完成",
+              Date().timeIntervalSince(job.start))
+        // 等底库读完再移交学习数据：后台载入期间旧引擎还能继续学。
+        if let prepared = job.result, saveLearning() {
+            readLearning(into: prepared)
+            applyEngineSettings(prepared)
+            engine = prepared
+            lexiconInUse = job.path
+            lexiconStamp = job.stamp
+        }
+        if reloadAfterLoading {
+            reloadAfterLoading = false
+            checkForChanges(force: true)
+        }
+        if !isPreparingEngine { activeInputClient?.enginePreparationFinished() }
+        if activeInputClient == nil && engine != nil { scheduleEngineReclaim() }
     }
 
     /// 用本地模型互译、之前没找到 llama-server 时，最多 5 秒看一次现在有没有了。
@@ -327,10 +393,10 @@ final class AppState {
             let custom = engine.loadCustomWords(customWordsPath)
             NSLog("MyType: 自定义词改了，重新载入 %d 条", custom)
         }
-        guard engine != nil || loading else { return }
+        guard engine != nil || loading != nil else { return }
         let wanted = lexiconPath()
         if let wanted, wanted != lexiconInUse || FileStamp(wanted) != lexiconStamp {
-            if loading {
+            if loading != nil {
                 reloadAfterLoading = true
             } else if engine != nil {
                 NSLog("MyType: 换词库 %@ -> %@", lexiconInUse ?? "", wanted)
@@ -401,18 +467,56 @@ final class AppState {
     func didCommit() {
         commitsSinceSave += 1
         if commitsSinceSave >= saveEvery {
-            save()
+            _ = saveLearning()
+        } else if learningSaveWork == nil {
+            let work = DispatchWorkItem { [weak self] in _ = self?.saveLearning() }
+            learningSaveWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8, execute: work)
         }
     }
 
     /// Ctrl+Delete 忘掉了学错的词：马上存（不等攒够上屏次数）。
     func didForget() {
         commitsSinceSave += 1
-        save()
+        _ = saveLearning()
     }
 
-    func save(force: Bool = false) {
-        guard let engine, force || commitsSinceSave > 0 else { return }
+    func recordInputStatistics(_ text: String) {
+        guard config.inputStatistics else { return }
+        let characters = InputStatistics.countHan(in: text)
+        guard characters > 0 else { return }
+        if inputStatistics == nil { inputStatistics = InputStatistics.read(in: supportDir) }
+        inputStatistics?.record(characters: characters)
+        statisticsDirty = true
+        if statisticsSaveWork == nil {
+            let work = DispatchWorkItem { [weak self] in self?.saveStatistics() }
+            statisticsSaveWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: work)
+        }
+    }
+
+    private func saveStatistics() {
+        statisticsSaveWork?.cancel()
+        statisticsSaveWork = nil
+        guard statisticsDirty, let inputStatistics else { return }
+        do {
+            try inputStatistics.write(in: supportDir)
+            statisticsDirty = false
+        } catch {
+            NSLog("MyType: 保存输入统计失败")
+        }
+    }
+
+    func save() {
+        saveStatistics()
+        _ = saveLearning()
+    }
+
+    @discardableResult
+    private func saveLearning() -> Bool {
+        learningSaveWork?.cancel()
+        learningSaveWork = nil
+        guard let engine, commitsSinceSave > 0 else { return true }
         try? FileManager.default.createDirectory(at: supportDir, withIntermediateDirectories: true)
         let dictSaved = engine.saveUserDict(userDictPath)
         if !dictSaved {
@@ -426,6 +530,7 @@ final class AppState {
         if dictSaved && historySaved {
             commitsSinceSave = 0
         }
+        return dictSaved && historySaved
     }
 }
 

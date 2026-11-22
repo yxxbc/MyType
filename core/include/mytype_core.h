@@ -16,7 +16,7 @@
  * 删函数或改参数含义时升主版本。外壳启动时用 mytype_abi_version() 比对主版本。
  * 规则见 docs/ABI.md。 */
 #define MYTYPE_ABI_VERSION_MAJOR 1
-#define MYTYPE_ABI_VERSION_MINOR 10
+#define MYTYPE_ABI_VERSION_MINOR 11
 
 #ifdef __cplusplus
 extern "C" {
@@ -263,6 +263,8 @@ enum {
  * 核心不带 voice 特性编译时返回 NULL（其余函数接受 NULL，什么也不做）。 */
 MyTypeVoice *mytype_voice_new(const char *model_dir);
 void mytype_voice_free(MyTypeVoice *voice);
+/* 影响下一次开麦；设备不支持时继续使用普通采集。 */
+void mytype_voice_set_duck_playback(MyTypeVoice *voice, int enabled);
 void mytype_voice_key_down(MyTypeVoice *voice);
 void mytype_voice_key_up(MyTypeVoice *voice);
 /* 丢掉这次说的话（Esc、切走输入框）。 */

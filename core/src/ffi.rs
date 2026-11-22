@@ -1146,7 +1146,7 @@ pub extern "C" fn mytype_abi_version() -> c_int {
 
 /// C 接口版本，和 `mytype_core.h` 里的 `MYTYPE_ABI_VERSION_*` 一致（测试会比对）。
 pub const ABI_VERSION_MAJOR: c_int = 1;
-pub const ABI_VERSION_MINOR: c_int = 10;
+pub const ABI_VERSION_MINOR: c_int = 11;
 
 /// MyType 版本号字符串。
 #[no_mangle]
@@ -1203,7 +1203,7 @@ mod tests {
         };
         assert_eq!(read("MYTYPE_ABI_VERSION_MAJOR"), ABI_VERSION_MAJOR);
         assert_eq!(read("MYTYPE_ABI_VERSION_MINOR"), ABI_VERSION_MINOR);
-        assert_eq!(mytype_abi_version(), 1010);
+        assert_eq!(mytype_abi_version(), 1011);
     }
 }
 

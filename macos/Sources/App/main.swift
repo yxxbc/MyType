@@ -214,14 +214,16 @@ func voiceModelCommand(_ args: [String]) -> Bool {
     return true
 }
 
-/// 测试用：从麦克风录几秒，打印识别结果（检查 TCC 权限和 cpal 采集；不开麦克风读文件）。
+/// 测试用：从麦克风录几秒，打印识别结果（检查 TCC 权限和采集）。
 func voiceMicTest(seconds: Double) -> Bool {
     let state = AppState.shared
+    state.loadConfig()
     guard let voice = mytype_voice_new(state.voiceModelDir) else {
         print("核心没带语音")
         return false
     }
     defer { mytype_voice_free(voice) }
+    if #available(macOS 14.0, *) { mytype_voice_set_duck_playback(voice, state.config.voiceDuckPlayback ? 1 : 0) }
     print("录音 \(seconds) 秒，请说话…")
     fflush(stdout)
     mytype_voice_key_down(voice)
@@ -318,6 +320,7 @@ if arguments.count > 1 {
     case "--enable": ok = Installer.enable()
     case "--select": ok = Installer.select()
     case "--disable": ok = Installer.disable()
+    case "--input-status": ok = Installer.inputStatus()
     case "--selftest": ok = selfTest()
     case "--settings": SettingsApp.run(page: arguments.count > 2 ? arguments[2] : nil)
     case "--settings-shot":
@@ -335,7 +338,7 @@ if arguments.count > 1 {
         print(appVersion)
         ok = true
     default:
-        print("用法：MyType [--register | --enable | --select | --disable | --selftest | --settings [页面] | --version |\n"
+        print("用法：MyType [--register | --enable | --select | --disable | --input-status | --selftest | --settings [页面] | --version |\n"
               + "              --install-lexicon [wanxiang | 文件.tar.gz] | --use-lexicon rime-ice|wanxiang |\n"
               + "              --download-model [--accept-license] | --install-voice-model [语音包.apk] |\n"
               + "              --remove-voice-model | --voice-test 说的话.wav | --voice-mic-test [秒数]]")
@@ -379,9 +382,15 @@ let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate
 app.setActivationPolicy(.accessory)
-AppState.shared.loadEngineInBackground()
+AppState.shared.loadConfig()
+let memoryPressure = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
+memoryPressure.setEventHandler {
+    AppState.shared.reclaimIdleEngine()
+    VoiceInput.shared.reclaimWhenIdle()
+}
+memoryPressure.resume()
 // 发布页有新版时在输入法菜单和设置「关于」页提示（最多一天查一次，不碰 GitHub API）
 Updater.shared.checkAutomatically(current: appVersion)
-withExtendedLifetime(server) {
+withExtendedLifetime((server, memoryPressure)) {
     app.run()
 }

@@ -9,7 +9,7 @@ import AVFoundation
 import CMyType
 
 enum SettingsPage: String, CaseIterable, Identifiable {
-    case general, input, emoji, voice, translate, words, about
+    case general, input, statistics, emoji, voice, translate, words, about
 
     var id: String { rawValue }
 
@@ -17,6 +17,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         switch self {
         case .general: return "常规"
         case .input: return "输入"
+        case .statistics: return "输入统计"
         case .emoji: return "表情"
         case .voice: return "语音"
         case .translate: return "翻译"
@@ -30,6 +31,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         switch self {
         case .general: return "gearshape"
         case .input: return "keyboard"
+        case .statistics: return "chart.bar.xaxis"
         case .emoji: return "face.smiling"
         case .voice: return "mic"
         case .translate: return "character.bubble"
@@ -57,6 +59,7 @@ final class SettingsModel: ObservableObject {
     }
     @Published private(set) var words: [CustomWords.Entry] = []
     @Published private(set) var toast: SettingsToast?
+    @Published private(set) var inputDays: [InputStatistics.Day] = []
 
     // 「添加自定义词」的两个框：打词时自动填拼音，手改过编码就不再自动填（清空了又自动填）
     @Published var newWord = "" {
@@ -145,6 +148,7 @@ final class SettingsModel: ObservableObject {
     /// 切回窗口时：文件在别处改了（文本编辑、同步）就重新读。窗口里还没写的先写（只写改过的键，不会盖掉别处的）。
     func reload() {
         save()
+        if page == .statistics { refreshInputStatistics() }
         // Key 也可能在输入法菜单的「设置互译 API Key…」里改过
         translateKeySet = !TranslateKeyFile.read(translateKeyPath).isEmpty
         if FileStamp(configPath) != configStamp {
@@ -157,6 +161,10 @@ final class SettingsModel: ObservableObject {
             customStamp = FileStamp(customPath)
             words = CustomWords(text: readText(customPath)).entries
         }
+    }
+
+    func refreshInputStatistics() {
+        inputDays = InputStatistics.read(in: supportDir).recentDays(14)
     }
 
     private func scheduleSave() {
@@ -514,10 +522,12 @@ final class SettingsModel: ObservableObject {
         voiceTesting = true
         voiceTestText = "正在听 3 秒…"
         let folder = VoiceModelInstaller.folder(in: supportDir).path
+        let duckPlayback = config.voiceDuckPlayback
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             var text = ""
             var failure: String?
             if let voice = mytype_voice_new(folder) {
+                if #available(macOS 14.0, *) { mytype_voice_set_duck_playback(voice, duckPlayback ? 1 : 0) }
                 mytype_voice_key_down(voice)
                 Thread.sleep(forTimeInterval: 3)
                 mytype_voice_key_up(voice)

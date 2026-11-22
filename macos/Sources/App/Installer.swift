@@ -16,11 +16,13 @@ enum Installer {
 
     /// 这个安装包登记过的输入源（includeAllInstalled：没打开的也要列出来）。
     private static func sources() -> [TISInputSource] {
-        let filter = [kTISPropertyBundleID as String: bundleID] as CFDictionary
-        guard let list = TISCreateInputSourceList(filter, true)?.takeRetainedValue() as? [TISInputSource] else {
+        guard let list = TISCreateInputSourceList(nil, true)?.takeRetainedValue() as? [TISInputSource] else {
             return []
         }
-        return list
+        return list.filter {
+            guard let id = string($0, kTISPropertyInputSourceID) else { return false }
+            return id == bundleID || id == modeID
+        }
     }
 
     private static func string(_ source: TISInputSource, _ key: CFString) -> String? {
@@ -33,8 +35,15 @@ enum Installer {
         return CFBooleanGetValue(Unmanaged<CFBoolean>.fromOpaque(raw).takeUnretainedValue())
     }
 
-    private static func mode() -> TISInputSource? {
-        sources().first { string($0, kTISPropertyInputSourceID) == modeID }
+    private static func registeredPair() -> (component: TISInputSource, mode: TISInputSource)? {
+        let list = sources()
+        let components = list.filter { string($0, kTISPropertyInputSourceID) == bundleID }
+        let modes = list.filter { string($0, kTISPropertyInputSourceID) == modeID }
+        guard components.count == 1, modes.count == 1 else {
+            print("MyType 输入源未就绪（组件 \(components.count)，拼音模式 \(modes.count)）；请从系统设置检查输入源")
+            return nil
+        }
+        return (components[0], modes[0])
     }
 
     /// 打开这个安装包登记的**所有**输入源：组件本身和各个输入模式。
@@ -43,55 +52,71 @@ enum Installer {
     /// `TISEnableInputSource`（返回 noErr 但状态还是关着），这时只能到
     /// 「系统设置 → 键盘 → 文字输入」里加一次，或者注销重新登录。
     static func enable() -> Bool {
-        // 按 bundle ID 过滤的列表只有输入模式，没有「组件本身」，所以自己从全量列表里挑
-        let all = TISCreateInputSourceList(nil, true)?.takeRetainedValue() as? [TISInputSource] ?? []
-        let list = all.filter { source in
-            guard let id = string(source, kTISPropertyInputSourceID) else { return false }
-            return id == bundleID || id.hasPrefix(bundleID + ".")
+        guard let pair = registeredPair() else { return false }
+        for source in [pair.component, pair.mode] where !bool(source, kTISPropertyInputSourceIsEnabled) {
+            let status = TISEnableInputSource(source)
+            guard status == noErr else {
+                print("打开失败（\(status)）：\(string(source, kTISPropertyInputSourceID) ?? "?")")
+                return false
+            }
         }
-        guard !list.isEmpty else {
-            print("没找到输入源 \(bundleID)：先 --register，可能要等几秒或重新登录")
+        // noErr 不代表组件真的启用；重新读取系统状态，不沿用旧的输入源对象。
+        guard let current = registeredPair(),
+              bool(current.component, kTISPropertyInputSourceIsEnabled),
+              bool(current.mode, kTISPropertyInputSourceIsEnabled) else {
+            print("系统尚未启用 MyType：请到「系统设置 → 键盘 → 文字输入」里添加")
             return false
         }
-        var ok = true
-        var changed = 0
-        for source in list {
-            let name = string(source, kTISPropertyInputSourceID) ?? "?"
-            if bool(source, kTISPropertyInputSourceIsEnabled) {
-                continue
-            }
-            let status = TISEnableInputSource(source)
-            if status != noErr {
-                ok = false
-                print("打开失败（\(status)）：\(name)")
-            } else if bool(source, kTISPropertyInputSourceIsEnabled) {
-                changed += 1
-            } else {
-                // 系统不认：组件那一条常见，到系统设置里加一次就好
-                print("系统没让打开 \(name)：到「系统设置 → 键盘 → 文字输入」里加一次")
-            }
-        }
-        if changed == 0 {
-            print("已经打开了")
-        } else {
-            print("已打开 \(changed) 个输入源（\(modeID)）")
-        }
-        return ok
+        print("MyType 已启用")
+        return true
     }
 
     static func select() -> Bool {
-        guard let source = mode() else {
-            print("没找到输入源 \(modeID)")
+        guard let pair = registeredPair(),
+              bool(pair.component, kTISPropertyInputSourceIsEnabled),
+              bool(pair.mode, kTISPropertyInputSourceIsEnabled),
+              bool(pair.mode, kTISPropertyInputSourceIsSelectCapable) else {
+            print("MyType 当前不可切换")
             return false
         }
-        let status = TISSelectInputSource(source)
-        print(status == noErr ? "已切到 MyType" : "切换失败（\(status)）")
-        return status == noErr
+        if currentSourceID() != modeID {
+            let status = TISSelectInputSource(pair.mode)
+            guard status == noErr, currentSourceID() == modeID else {
+                print("系统未确认切到 MyType（\(status)）；请在普通文本框里手动切换")
+                return false
+            }
+        }
+        print("已切到 MyType")
+        return true
+    }
+
+    private static func currentSourceID() -> String? {
+        guard let current = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue() else { return nil }
+        return string(current, kTISPropertyInputSourceID)
+    }
+
+    /// 只读诊断。安全键盘输入是会话状态；这里报告它，但不尝试关闭或绕过。
+    static func inputStatus() -> Bool {
+        print("当前输入源：\(currentSourceID() ?? "未知")")
+        print("安全键盘输入：\(IsSecureEventInputEnabled() ? "开启" : "关闭")")
+        let list = sources()
+        print("MyType 输入源条目：\(list.count)")
+        for source in list {
+            let id = string(source, kTISPropertyInputSourceID) ?? "?"
+            let enabled = bool(source, kTISPropertyInputSourceIsEnabled) ? "是" : "否"
+            let selectable = bool(source, kTISPropertyInputSourceIsSelectCapable) ? "是" : "否"
+            print("  \(id)：已启用=\(enabled)，可选择=\(selectable)")
+        }
+        return true
     }
 
     static func disable() -> Bool {
         var ok = true
-        for source in sources() where bool(source, kTISPropertyInputSourceIsEnabled) {
+        // 先关闭模式，再关闭组件；别留下一个仅有组件还在启用的输入法。
+        let list = sources()
+        let modes = list.filter { string($0, kTISPropertyInputSourceID) == modeID }
+        let components = list.filter { string($0, kTISPropertyInputSourceID) == bundleID }
+        for source in modes + components where bool(source, kTISPropertyInputSourceIsEnabled) {
             ok = TISDisableInputSource(source) == noErr && ok
         }
         print(ok ? "已关闭" : "关闭失败")

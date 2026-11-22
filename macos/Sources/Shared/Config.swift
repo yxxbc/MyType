@@ -119,12 +119,16 @@ public struct MyTypeConfig: Equatable {
     public var toolbar = true
     /// 记录剪贴板历史（只在内存里，最多 20 条）。默认关：可能把复制的密码也记下来
     public var clipboardHistory = false
+    /// 在本机记录每日上屏汉字数和次数，不记录原文。
+    public var inputStatistics = false
     /// 语音输入：按住 voiceKey 说话，松开出字（模型在设置窗口里下载）
     public var voice = true
     /// 语音键，键名：Alt_R（右 Option）、Control_R、F8…；留空不用
     public var voiceKey = "Alt_R"
     /// 语音识别的结果同时复制到剪贴板
     public var voiceCopy = false
+    /// 录音时让 macOS 暂时压低其他 App 的声音。
+    public var voiceDuckPlayback = true
     /// 打开表情面板的快捷键，nil 不用快捷键。默认 Control+period；Command 组合键
     /// 多半到不了输入法，默认 Control+period（Super 也当 Control，见 Shortcut）
     public var emojiKey: Shortcut? = .emojiDefault
@@ -268,7 +272,8 @@ public struct MyTypeConfig: Equatable {
         "WubiAutoCommit", "WubiHint", "ShiftToggle",
         "Traditional",
         "PunctuationStyle", "DateTime", "Calculator", "EmojiSuggest", "AutoSpace", "AutoSpaceLetters",
-        "AutoSpaceDigits", "Lexicon", "Toolbar", "ClipboardHistory", "Voice", "VoiceKey", "VoiceCopy", "EmojiKey",
+        "AutoSpaceDigits", "Lexicon", "Toolbar", "ClipboardHistory", "InputStatistics", "Voice", "VoiceKey", "VoiceCopy",
+        "VoiceDuckPlayback", "EmojiKey",
         "ToggleKey", "TranslateModeKey", "CheckUpdate",
         "Translate", "TranslateTarget", "TranslateBaseUrl", "TranslateModel", "TranslateFormal", "TranslateLocal",
         "TranslateLocalModel", "TranslateLlamaServer", "TranslateIdleMinutes",
@@ -289,6 +294,8 @@ public struct MyTypeConfig: Equatable {
         "DateTime": \.dateTime, "Calculator": \.calculator, "EmojiSuggest": \.emojiSuggest,
         "AutoSpace": \.autoSpace, "AutoSpaceLetters": \.autoSpaceLetters, "AutoSpaceDigits": \.autoSpaceDigits,
         "Toolbar": \.toolbar, "ClipboardHistory": \.clipboardHistory, "Voice": \.voice, "VoiceCopy": \.voiceCopy,
+        "InputStatistics": \.inputStatistics,
+        "VoiceDuckPlayback": \.voiceDuckPlayback,
         "Translate": \.translate, "TranslateFormal": \.translateFormal, "TranslateLocal": \.translateLocal,
         "CheckUpdate": \.checkUpdate,
     ]
@@ -555,6 +562,8 @@ public struct MyTypeConfig: Equatable {
         Toolbar=\(b(d.toolbar))
         # 工具栏里记剪贴板历史（只在内存里，最多 20 条）。可能把复制的密码也记下来，默认关
         ClipboardHistory=\(b(d.clipboardHistory))
+        # 每日上屏统计（只存本地计数，不存内容）
+        InputStatistics=\(b(d.inputStatistics))
 
         # 语音输入：按住语音键说话，松开出字（点按一下也行，说完停一下自动结束）。模型在设置窗口「语音」页下载
         Voice=\(b(d.voice))
@@ -562,6 +571,8 @@ public struct MyTypeConfig: Equatable {
         VoiceKey=\(d.voiceKey)
         # 说的话上屏的同时复制到剪贴板
         VoiceCopy=\(b(d.voiceCopy))
+        # 语音输入期间压低后台音频（macOS 14 起，不改系统音量）
+        VoiceDuckPlayback=\(b(d.voiceDuckPlayback))
         # 打开表情面板的快捷键，键名如Control+period、Control+semicolon、Control+Shift+E；留空不用。
         # Command 组合键多半到不了输入法，写 Super 的当 Control
         EmojiKey=\(d.emojiKey?.name ?? "")

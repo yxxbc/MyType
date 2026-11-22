@@ -38,17 +38,11 @@ ditto "$src" "$dest"
 xattr -dr com.apple.quarantine "$dest" 2>/dev/null || true
 
 bin="$dest/Contents/MacOS/MyType"
-"$bin" --register
-# 菜单栏的输入法菜单会缓存列表和图标：重启它才会重新读一遍（系统会马上把它拉起来）
-killall TextInputMenuAgent 2>/dev/null || true
-# 刚登记完系统可能还没列出来，等一下再打开；打开以后菜单栏那边可能还是旧的，再刷一次
+"$bin" --register || echo "自动登记失败，仍可在系统设置里添加。"
+# 登记可能异步完成；一旦确认启用，只尝试切换一次，不重启系统输入法菜单。
 for _ in 1 2 3 4 5 6 7 8; do
   if "$bin" --enable >/dev/null 2>&1; then
-    "$bin" --enable
-    sleep 1
-    killall TextInputMenuAgent 2>/dev/null || true
-    if "$bin" --select >/dev/null 2>&1; then
-      "$bin" --select
+    if "$bin" --select; then
       echo "装好了，已经切到 MyType。"
     else
       echo "装好了。菜单栏的输入法菜单里选 MyType 就能用。"

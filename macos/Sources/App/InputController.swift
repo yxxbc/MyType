@@ -20,6 +20,7 @@ class MyTypeInputController: IMKInputController {
     private var lastMarked = (text: "", cursor: 0)
     /// 最近上屏或交给应用的最后一个字。很多应用读不到光标前的字（attributedSubstring 返回 nil），用它兜底。
     private var lastInserted: UInt32 = 0
+    private var confirmAfterLoad = false
     /// 上一次单按 Shift 切换时那个事件的时刻（NSEvent.timestamp）
     private var lastShiftTap: TimeInterval = -.infinity
     /// 单按切换以后这么久以内又「按下」的 Shift 不算：Electron 的应用有时把一次按下松开报成两遍
@@ -38,12 +39,11 @@ class MyTypeInputController: IMKInputController {
 
     override init!(server: IMKServer!, delegate: Any!, client inputClient: Any!) {
         super.init(server: server, delegate: delegate, client: inputClient)
-        composer = Composer(engine: AppState.shared.engine, client: self)
+        composer = Composer(engine: nil, client: self)
         composer.onCommit = { _ in AppState.shared.didCommit() }
         composer.onForget = { AppState.shared.didForget() }
         composer.sampleClipboard = { AppState.shared.sampleClipboard() }
         composer.onTranslatePoll = { [weak self] in self?.startTranslatePolling() }
-        syncComposer()
     }
 
     private func startTranslatePolling() {
@@ -68,9 +68,7 @@ class MyTypeInputController: IMKInputController {
     private func syncComposer(force: Bool = false) {
         let state = AppState.shared
         state.checkForChanges(force: force)
-        if let engine = state.engine, composer.currentEngine !== engine {
-            composer.setEngine(engine)
-        }
+        composer.setEngine(state.engine)
         composer.setTranslator(state.translator)
         if configGeneration != state.configGeneration {
             configGeneration = state.configGeneration
@@ -121,7 +119,13 @@ class MyTypeInputController: IMKInputController {
                 composer.otherModifierChanged()
                 return composer.hasPendingText || composer.openPanel != nil
             }
-            let handled = composer.handle(key)
+            let preparing = AppState.shared.isPreparingEngine
+            if preparing && composer.isComposing && key.keysym == 0x20 && key.modifiers.isEmpty {
+                confirmAfterLoad = true
+                return true
+            }
+            confirmAfterLoad = false
+            let handled = composer.handle(key, preparingEngine: preparing)
             if !handled {
                 // 交给应用的键也记下来（读不到光标前的字时，20:22 的冒号要知道前面是数字）；
                 // 功能键、快捷键之后就不知道光标前是什么了
@@ -159,6 +163,7 @@ class MyTypeInputController: IMKInputController {
         }
         if composer.shiftChanged(down: down, otherModifiers: flags & others != 0, now: composer.clock(), right: right) {
             lastShiftTap = event.timestamp
+            confirmAfterLoad = false
         }
     }
 
@@ -166,6 +171,7 @@ class MyTypeInputController: IMKInputController {
         super.activateServer(sender)
         lastMarked = ("", 0)
         lastInserted = 0
+        AppState.shared.activateInputClient(self)
         syncComposer(force: true)
         // 剪贴板历史（设置里打开时）：切换输入框时看一眼（和以前一样，另外打开工具栏的剪贴板页时也看）
         AppState.shared.sampleClipboard()
@@ -173,16 +179,32 @@ class MyTypeInputController: IMKInputController {
 
     override func deactivateServer(_ sender: Any!) {
         VoiceInput.shared.cancel(for: self)
-        composer.commitComposition()
+        commitComposition(sender)
         stopTranslatePolling()
         showCandidates(nil)
         AppState.shared.save()
+        // IMK 可能保留失焦控制器；不能让它继续强持有大词库。
+        composer.setEngine(nil)
+        AppState.shared.deactivateInputClient(self)
         super.deactivateServer(sender)
     }
 
     /// 系统要求结束组字（换输入框、点了别处、切走输入法）：打的字母原样上屏，见 Composer.commitComposition。
     override func commitComposition(_ sender: Any!) {
+        confirmAfterLoad = false
         composer.commitComposition()
+    }
+
+    /// 后台词库到位：给已有的编辑区补出候选；空格已经按过时确认一次。
+    func enginePreparationFinished() {
+        syncComposer()
+        guard confirmAfterLoad else { return }
+        confirmAfterLoad = false
+        if composer.hasEngine {
+            _ = composer.handle(.char(" "))
+        } else {
+            composer.commitComposition()
+        }
     }
 
     override func hidePalettes() {
@@ -244,6 +266,10 @@ extension MyTypeInputController: TextClient {
     func insertText(_ text: String) {
         guard let client = textInput else { return }
         client.insertText(text, replacementRange: noRange())
+        let state = AppState.shared
+        if state.config.inputStatistics && !IsSecureEventInputEnabled() {
+            state.recordInputStatistics(text)
+        }
         lastMarked = ("", 0)
         if let last = text.unicodeScalars.last {
             lastInserted = last.value

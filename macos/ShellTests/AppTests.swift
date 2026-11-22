@@ -1,10 +1,36 @@
 // 外壳里不按键的测试：数据目录迁移、应用更新（本机假发布页，不碰 GitHub）。
 
 import Foundation
+import Carbon
 
 func runAppTests() {
     testConfigMigration()
     testUpdateWithLocalRelease()
+    testInputLifecycle()
+}
+
+private func testInputLifecycle() {
+    let state = AppState.shared
+    state.reclaimIdleEngine()
+    check(state.engine == nil, "内存：空闲词库可释放")
+    let (controller, client) = session(["InputStatistics": "True"])
+    type(controller, "nihao")
+    check(state.engine == nil && client.markedText.contains("nihao"), "内存：后台冷载入保住首键", client.markedText)
+    press(controller, .space)
+    state.waitForEngine()
+    check(client.committed == "你好", "内存：冷载入期间按的空格在就绪后确认候选", client.committed)
+    state.reclaimIdleEngine()
+    check(state.engine != nil, "内存：有组词会话时不释放词库")
+    controller.deactivateServer(client)
+    if !IsSecureEventInputEnabled() {
+        let count = InputStatistics.read(in: state.supportDir).recentDays(1).last?.count
+        check(count == .init(characters: 2, commits: 1), "统计：输入控制器上屏，失焦时保存日计数")
+    }
+    state.reclaimIdleEngine()
+    check(state.engine == nil, "内存：失焦后可释放词库")
+    writeConfig([:])
+    state.loadConfig()
+    state.waitForEngine()
 }
 
 private func testConfigMigration() {

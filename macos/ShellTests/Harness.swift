@@ -38,13 +38,10 @@ func setUpHarness() {
         exit(2)
     }
     writeConfig([:])
-    state.loadEngineInBackground()
     let start = Date()
-    while state.engine == nil && Date().timeIntervalSince(start) < 120 {
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
-    }
+    state.waitForEngine()
     guard state.engine != nil else {
-        print("FAIL 词库两分钟没载入")
+        print("FAIL 词库没有载入")
         exit(1)
     }
     print(String(format: "词库载入 %.1f 秒", Date().timeIntervalSince(start)))
