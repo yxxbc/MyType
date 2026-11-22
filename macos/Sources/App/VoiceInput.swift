@@ -1,7 +1,7 @@
 // 语音输入（核心的 mytype_voice_*）：
-// 按下语音键开始听，按住超过 300ms 松开即结束；更短算点按，继续听到静音 1.5 秒或再按一次。
-// 正在听时编辑区里是识别到一半的字，候选框里是麦克风和跟着音量动的波形；出结果就上屏。
+// 按一下语音键开始连续监听；再按一下结束并出结果。松开按键不会结束（避免修饰键误断）。
 // 说话途中按 Esc 取消；按别的键也不要这次的语音，键照常处理。正在打拼音时不抢语音键。
+// 正在听时编辑区里是识别到一半的字，候选框里是麦克风和跟着音量动的波形；出结果就上屏。
 //
 // 识别在核心里（mytype_voice_*，开麦克风、读模型、解码都在后台线程），这里每 50 毫秒取一次状态。
 // 模型在设置窗口的「语音」页下载到数据目录的 wtlocal/（VoiceModelInstaller）。
@@ -38,8 +38,10 @@ final class VoiceInput {
     /// 没下载模型时按下了语音键（修饰键）：松开前没按别的键才提示去下载，
     /// 免得 Option+方向键 这些常用组合每次都闪一下提示
     private var pendingHint = false
-    /// 语音键按着
+    /// 语音键按着（只用来挡住按住时的自动重复，不再决定录音结束）
     private var keyDown = false
+    /// 核心现在真的在录音（showing 还可能是提示/识别中的状态）
+    private var listening = false
     /// 这次语音在哪个输入框里
     private weak var host: VoiceHost?
     private var showing = false
@@ -144,8 +146,10 @@ final class VoiceInput {
 
     private func press(down: Bool, composing: Bool, host: VoiceHost) -> Bool {
         guard let key else { return false }
+        // 按住时的自动重复：只吞掉，不改状态
+        if down && keyDown { return true }
         let auth = AVCaptureDevice.authorizationStatus(for: .audio).rawValue
-        vlog("press down=\(down) auth=\(auth) ready=\(VoiceModelInstaller.isReady(URL(fileURLWithPath: modelDir))) key=\(key.name) keyDown=\(keyDown) showing=\(showing) composing=\(composing) model=\(modelDir)")
+        vlog("press down=\(down) auth=\(auth) ready=\(VoiceModelInstaller.isReady(URL(fileURLWithPath: modelDir))) key=\(key.name) keyDown=\(keyDown) listening=\(listening) showing=\(showing) composing=\(composing) model=\(modelDir)")
         if !VoiceModelInstaller.isReady(URL(fileURLWithPath: modelDir)) {
             // 还没下载模型：不碰麦克风（不弹权限框），只提示去设置里下载（提示文字是核心给的）
             if down {
@@ -161,6 +165,7 @@ final class VoiceInput {
             if showing && self.host !== host { cancel() }
             self.host = host
             showing = true
+            listening = false
             holdUntil = 0
             mytype_voice_key_down(handle)
             mytype_voice_key_up(handle)
@@ -169,15 +174,11 @@ final class VoiceInput {
             return true
         }
         if !down {
+            // 连续监听：松开语音键只清掉「按着」状态，不结束录音。
             guard keyDown else { return false }
             keyDown = false
-            if let handle, showing && self.host === host {
-                mytype_voice_key_up(handle)
-                poll()
-            }
             return true
         }
-        if keyDown { return true } // 按住时的自动重复
         if composing && !showing { return false } // 正在打拼音时不抢这个键
         if showing && self.host !== host { cancel() }
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
@@ -197,14 +198,24 @@ final class VoiceInput {
             hint("麦克风没打开：系统设置 → 隐私与安全性 → 麦克风，打开 MyType", host: host)
             return true
         }
+        // 已经在听：再按一下结束，等核心把这段识别完
+        if listening {
+            if let handle { mytype_voice_finish(handle) }
+            listening = false
+            keyDown = true
+            poll()
+            startTimer()
+            return true
+        }
+        // 提示层（没权限、没模型）或者上一段还在识别：先收起，再开始新的一段
+        if showing { cancel() }
         guard let handle = prepareHandle() else { return false }
         keyDown = true
-        if !showing {
-            self.host = host
-            showing = true
-            levels = []
-            holdUntil = 0
-        }
+        self.host = host
+        showing = true
+        listening = true
+        levels = []
+        holdUntil = 0
         mytype_voice_key_down(handle)
         poll()
         startTimer()
@@ -282,6 +293,7 @@ final class VoiceInput {
             return false
         case Int(MYTYPE_VOICE_ERROR):
             vlog("error: \(text)")
+            listening = false
             NSLog("MyType: 语音 %@", text)
             host.voiceShow(.message(text: text, error: true))
             // 没下载模型的提示要去设置里操作，多留一会儿
@@ -296,9 +308,10 @@ final class VoiceInput {
     }
 
     private func finish() {
-        vlog("finish showing=\(showing) keyDown=\(keyDown)")
+        vlog("finish showing=\(showing) listening=\(listening) keyDown=\(keyDown)")
         stopTimer()
         keyDown = false
+        listening = false
         if showing {
             showing = false
             host?.voiceShow(.hidden)

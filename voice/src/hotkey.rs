@@ -5,7 +5,7 @@
 //! - 松开时按住时长 < hold_threshold(默认 300ms) => 判定为「点按」，
 //!   继续录音，直到再次点按或静音超时
 //! - 松开时按住时长 >= hold_threshold => 判定为「长按」，立即结束
-//! - 同一个键可以同时充当长按键和点按键
+//! - 同一个键可以同时充当长按键和点按键\n//! - 外壳也可以直接调 `finish()`：连续监听时再按一下结束，不依赖松开按键
 
 use std::time::{Duration, Instant};
 
@@ -103,6 +103,15 @@ impl VoiceTrigger {
             self.reset();
             vec![Action::Stop]
         }
+    }
+
+    /// 外部要求结束（快捷键再按一下、连续模式）：长按/点按都直接结束。
+    pub fn finish(&mut self) -> Option<Action> {
+        if !self.recording {
+            return None;
+        }
+        self.reset();
+        Some(Action::Stop)
     }
 
     /// 有语音活动（VAD 判定为说话）
@@ -210,6 +219,16 @@ mod tests {
             vec![Action::Stop]
         );
         assert!(!tr.is_recording());
+    }
+
+    #[test]
+    fn finish_stops_hold_mode_without_release() {
+        let t0 = Instant::now();
+        let mut tr = VoiceTrigger::new(cfg());
+        assert_eq!(tr.on_down(t0), vec![Action::Start]);
+        assert_eq!(tr.finish(), Some(Action::Stop));
+        assert!(!tr.is_recording());
+        assert_eq!(tr.finish(), None, "已经停了再按不重复结束");
     }
 
     #[test]

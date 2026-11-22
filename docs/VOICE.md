@@ -1,6 +1,6 @@
 # 语音输入
 
-按住语音键说话，松开上屏；点一下开始说，停顿一会儿自动上屏；Esc 取消。识别在本机做，录音不上传。
+按一下语音键开始连续监听，松开不会结束；再按一下结束并上屏。Esc 取消。识别在本机做，录音不上传。
 默认语音键是右 Option（`VoiceKey=Alt_R`），设置窗口「语音」页可以改成右 Control、F8–F10 或关掉。
 
 ## 链路
@@ -9,17 +9,17 @@
 MyTypeInputController（输入法进程）
   │  flagsChanged / keyDown / keyUp  ── VoiceInput.swift
   ▼
-mytype_voice_key_down / key_up / poll / text / cancel   （core/src/voice_ffi.rs）
+mytype_voice_key_down / finish / poll / text / cancel   （core/src/voice_ffi.rs）
   │
   ├─ 工作线程：Core Audio 语音处理（或 cpal）开默认输入设备 → 16kHz 单声道 → 20ms 分帧 + 能量 VAD
-  │            → wtlocal 识别（边说边出中间结果）→ 松开后整段定稿
+  │            → wtlocal 识别（边说边出中间结果）→ 再按一下后整段定稿
   └─ 模型线程：第一次按语音键时把模型读进内存，只做一次；没读完时音频先攒着
 ```
 
 | 层 | 文件 | 做什么 |
 |---|---|---|
 | 外壳 | `macos/Sources/App/VoiceInput.swift` | 热键状态、编辑区里的中间结果、候选框里的麦克风和波形、上屏 / 取消 |
-| C 接口 | `core/src/voice_ffi.rs` | `mytype_voice_new/key_down/key_up/poll/text/model_state/cancel`；都不阻塞，外壳每 50ms 取一次状态 |
+| C 接口 | `core/src/voice_ffi.rs` | `mytype_voice_new/key_down/key_up/finish/poll/text/model_state/cancel`；都不阻塞，外壳每 50ms 取一次状态 |
 | 采集 | `voice/src/capture.rs` | macOS 14+ 可用 VoiceProcessingIO 压低背景声，失败时退回 cpal；统一输出 16kHz 单声道 |
 | 分段 | `voice/src/audio.rs`、`vad.rs` | 重采样、320 样本定长帧、自适应噪声底 + 起始确认 100ms + 挂起 480ms |
 | 识别 | `voice/src/wtlocal/` | 微信输入法的离线模型，纯 Rust int8 推理，4 线程 |
@@ -41,13 +41,13 @@ mytype_voice_key_down / key_up / poll / text / cancel   （core/src/voice_ffi.rs
 
 ## 规则
 
-- 按住 ≥300ms 松开即结束；更短算点按，说完约 2 秒（挂起 480ms + 静音 1.5 秒）或再按一次结束；单次最长 120 秒。
-- 正在打拼音时语音键交给应用，不抢；`Option+方向键` 这类组合会让麦克风亮一下就停。
+- 按一下开始连续监听，再按一下结束并上屏；松开按键不会结束（右 Option 这类修饰键不会因为别的按键/桥接事件误断）；单次最长 120 秒。
+- 正在打拼音时语音键交给应用，不抢；在连续监听中按别的键会取消这次语音（`Option+方向键` 也一样），那个键照常处理。
 - 说话时按 `Esc` 丢掉；按别的键也丢掉，那个键照常处理；切走输入框（失去焦点、切输入法）丢掉。
 - 结果只往开始说话的那个输入框上屏。
 - 没下载模型时按语音键只提示「去设置里下载」，不碰麦克风、不下载。设置里语音输入的开关在下载好模型前是灰的（显示为关）。
 - `VoiceCopy=True` 时说的话上屏后也复制到剪贴板（密码框里不复制）。
-- macOS 14 及以上默认在开麦时暂时压低音乐和视频等后台播放，并使用系统回声抑制。松开结束录音、静音自动结束或取消时恢复，不改系统音量，也不保证完全静音。可在「设置 → 语音」关闭「录音时降低其他声音」（`VoiceDuckPlayback=False`）；旧版 macOS 或不支持语音处理的设备继续用普通麦克风采集。
+- macOS 14 及以上默认在开麦时暂时压低音乐和视频等后台播放，并使用系统回声抑制。再按一下结束或取消时恢复，不改系统音量，也不保证完全静音。可在「设置 → 语音」关闭「录音时降低其他声音」（`VoiceDuckPlayback=False`）；旧版 macOS 或不支持语音处理的设备继续用普通麦克风采集。
 
 ## 模型
 

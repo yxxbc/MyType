@@ -22,6 +22,8 @@ pub unsafe extern "C" fn mytype_voice_key_down(_voice: *mut MyTypeVoice) {}
 #[no_mangle]
 pub unsafe extern "C" fn mytype_voice_key_up(_voice: *mut MyTypeVoice) {}
 #[no_mangle]
+pub unsafe extern "C" fn mytype_voice_finish(_voice: *mut MyTypeVoice) {}
+#[no_mangle]
 pub unsafe extern "C" fn mytype_voice_cancel(_voice: *mut MyTypeVoice) {}
 #[no_mangle]
 pub unsafe extern "C" fn mytype_voice_poll(_voice: *mut MyTypeVoice) -> c_int {

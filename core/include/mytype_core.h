@@ -16,7 +16,7 @@
  * 删函数或改参数含义时升主版本。外壳启动时用 mytype_abi_version() 比对主版本。
  * 规则见 docs/ABI.md。 */
 #define MYTYPE_ABI_VERSION_MAJOR 1
-#define MYTYPE_ABI_VERSION_MINOR 13
+#define MYTYPE_ABI_VERSION_MINOR 14
 
 #ifdef __cplusplus
 extern "C" {
@@ -274,6 +274,8 @@ void mytype_voice_free(MyTypeVoice *voice);
 void mytype_voice_set_duck_playback(MyTypeVoice *voice, int enabled);
 void mytype_voice_key_down(MyTypeVoice *voice);
 void mytype_voice_key_up(MyTypeVoice *voice);
+/* 快捷键再按一下：结束录音并出结果（ABI 1.14 起）。 */
+void mytype_voice_finish(MyTypeVoice *voice);
 /* 丢掉这次说的话（Esc、切走输入框）。 */
 void mytype_voice_cancel(MyTypeVoice *voice);
 /* 返回 MYTYPE_VOICE_*。 */

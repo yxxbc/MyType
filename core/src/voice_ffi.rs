@@ -555,6 +555,16 @@ pub unsafe extern "C" fn mytype_voice_key_up(voice: *mut MyTypeVoice) {
     }
 }
 
+/// 快捷键再按一下：不管当前是长按还是点按，都结束录音并出结果（ABI 1.14 起）。
+#[no_mangle]
+pub unsafe extern "C" fn mytype_voice_finish(voice: *mut MyTypeVoice) {
+    if let Some(voice) = unsafe { voice.as_mut() } {
+        if let Some(action) = voice.trigger.finish() {
+            voice.apply(vec![action]);
+        }
+    }
+}
+
 /// 不要这次的结果（按了 Esc、切走了输入框）。
 #[no_mangle]
 pub unsafe extern "C" fn mytype_voice_cancel(voice: *mut MyTypeVoice) {

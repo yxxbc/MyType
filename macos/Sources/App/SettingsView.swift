@@ -156,27 +156,35 @@ private struct InputStatisticsPage: View {
                     metric(today.commits, "今日上屏次数")
                     metric(total, "近 \(model.statisticsDays) 天汉字")
                 }
-                HStack(alignment: .bottom, spacing: 5) {
-                    ForEach(model.inputDays) { day in
-                        let isToday = day.id == model.inputDays.last?.id
-                        Group {
-                            if day.count.characters == 0 {
-                                Circle()
-                                    .fill(palette.cardBorder)
-                                    .frame(width: 4, height: 4)
-                            } else {
-                                RoundedRectangle(cornerRadius: 3)
-                                    .fill(palette.accent.opacity(isToday ? 1 : 0.58))
-                                    .frame(height: max(3, 76 * CGFloat(day.count.characters) / scale))
+                // 90 天时 90 根柱子要按可用宽度算，不能再让每根 "maxWidth: .infinity"：
+                // 那样总宽会超过卡片，最右边今天的柱子会被裁掉。
+                GeometryReader { geometry in
+                    let count = max(model.inputDays.count, 1)
+                    let spacing: CGFloat = count > 30 ? 1 : 5
+                    let width = max(1, (geometry.size.width - spacing * CGFloat(count - 1)) / CGFloat(count))
+                    HStack(alignment: .bottom, spacing: spacing) {
+                        ForEach(model.inputDays) { day in
+                            let isToday = day.id == model.inputDays.last?.id
+                            Group {
+                                if day.count.characters == 0 {
+                                    Circle()
+                                        .fill(palette.cardBorder)
+                                        .frame(width: min(4, width), height: 4)
+                                } else {
+                                    RoundedRectangle(cornerRadius: min(3, width / 2))
+                                        .fill(palette.accent.opacity(isToday ? 1 : 0.58))
+                                        .frame(width: width, height: max(3, 76 * CGFloat(day.count.characters) / scale))
+                                }
                             }
+                            .frame(width: width, alignment: .bottom)
+                            .help("\(day.date.formatted(date: .abbreviated, time: .omitted))：\(day.count.characters) 字，\(day.count.commits) 次")
+                            .accessibilityLabel(Text(day.date, style: .date))
+                            .accessibilityValue("\(day.count.characters) 字，\(day.count.commits) 次")
                         }
-                        .frame(maxWidth: .infinity, alignment: .bottom)
-                        .help("\(day.date.formatted(date: .abbreviated, time: .omitted))：\(day.count.characters) 字，\(day.count.commits) 次")
-                        .accessibilityLabel(Text(day.date, style: .date))
-                        .accessibilityValue("\(day.count.characters) 字，\(day.count.commits) 次")
                     }
+                    .frame(width: geometry.size.width, alignment: .leading)
                 }
-                .frame(height: 76, alignment: .bottom)
+                .frame(height: 76)
                 HStack {
                     if let first = model.inputDays.first {
                         Text(first.date.formatted(.dateTime.month().day()))
@@ -668,7 +676,7 @@ private struct VoicePage: View {
 
     var body: some View {
         let ready = model.voiceModelReady
-        PrefGroup("语音输入", info: "按住语音键说话，松开就上屏；或者点一下语音键开始说，停顿一会儿自动上屏。"
+        PrefGroup("语音输入", info: "按一下语音键开始连续监听，松开不会结束；再按一下结束并上屏。Esc 取消。"
                   + "说的时候按 Esc 取消。正在打拼音时语音键不起作用。\n\n"
                   + "右 Option 按下时就开始听，Option+方向键这类组合会让麦克风亮一下就停；不想这样可以换成别的键。"
                   + "F8–F10 在 Mac 笔记本上默认是媒体键，要在「系统设置 → 键盘」里打开「将 F1、F2 等键用作标准功能键」。") {
