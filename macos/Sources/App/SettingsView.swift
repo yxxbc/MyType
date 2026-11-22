@@ -140,14 +140,12 @@ private struct LearningPage: View {
 private struct InputStatisticsPage: View {
     @ObservedObject var model: SettingsModel
     @Environment(\.palette) private var palette
-    /// 页面显示多少天；数据文件本身保留最近 90 天。
-    @State private var days = 14
     @State private var confirmClear = false
 
     private var today: InputStatistics.Count { model.inputDays.last?.count ?? .init() }
     private var total: Int { model.inputDays.reduce(0) { $0 + $1.count.characters } }
     private var peak: Int { max(1, model.inputDays.map { $0.count.characters }.max() ?? 0) }
-    private var rangeTitle: String { "近 \(days) 天" }
+    private var rangeTitle: String { "近 \(model.statisticsDays) 天" }
 
     var body: some View {
         let scale = CGFloat(peak)
@@ -156,7 +154,7 @@ private struct InputStatisticsPage: View {
                 HStack(alignment: .firstTextBaseline, spacing: 22) {
                     metric(today.characters, "今日汉字")
                     metric(today.commits, "今日上屏次数")
-                    metric(total, "近 \(days) 天汉字")
+                    metric(total, "近 \(model.statisticsDays) 天汉字")
                 }
                 HStack(alignment: .bottom, spacing: 5) {
                     ForEach(model.inputDays) { day in
@@ -197,7 +195,7 @@ private struct InputStatisticsPage: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
         } trailing: {
-            Picker("", selection: $days) {
+            Picker("", selection: $model.statisticsDays) {
                 ForEach([7, 14, 30, 90], id: \.self) { Text("\($0) 天").tag($0) }
             }
             .labelsHidden()
@@ -214,10 +212,10 @@ private struct InputStatisticsPage: View {
             ActionRow(title: "清除输入统计", subtitle: "删除本机保存的每日计数",
                       action: { confirmClear = true })
         }
-        .onAppear { model.refreshInputStatistics(days: days) }
-        .onChange(of: days) { model.refreshInputStatistics(days: $0) }
+        .onAppear { model.refreshInputStatistics(days: model.statisticsDays) }
+        .onChange(of: model.statisticsDays) { model.refreshInputStatistics(days: $0) }
         .confirmationDialog("清除输入统计？", isPresented: $confirmClear, titleVisibility: .visible) {
-            Button("清除", role: .destructive) { model.clearInputStatistics(days: days) }
+            Button("清除", role: .destructive) { model.clearInputStatistics(days: model.statisticsDays) }
             Button("取消", role: .cancel) {}
         } message: {
             Text("会删掉本机保存的每日汉字数和上屏次数，之后从头记录。学习数据和自定义词不受影响。")

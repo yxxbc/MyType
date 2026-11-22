@@ -601,6 +601,11 @@ final class AppState {
     private func saveLearning(force: Bool = false) -> Bool {
         learningSaveWork?.cancel()
         learningSaveWork = nil
+        // 设置里刚点了清除：先把内存清掉再存，别把旧数据写回去。force 是 clearLearning 自己
+        // 调的，不能再走一遍，否则递归。
+        if !force {
+            clearLearningIfRequested()
+        }
         guard let engine, force || commitsSinceSave > 0 else { return true }
         try? FileManager.default.createDirectory(at: supportDir, withIntermediateDirectories: true)
         let dictSaved = engine.saveUserDict(userDictPath)

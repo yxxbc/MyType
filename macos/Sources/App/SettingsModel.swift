@@ -63,7 +63,7 @@ final class SettingsModel: ObservableObject {
     @Published private(set) var toast: SettingsToast?
     @Published private(set) var inputDays: [InputStatistics.Day] = []
     /// 统计页当前选的天数；切走窗口再回来时 `reload` 要按这个范围重读，不能回到 14。
-    @Published private(set) var statisticsDays = 14
+    @Published var statisticsDays = 14
     @Published private(set) var learningCounts = LearningData.Counts()
 
     // 「添加自定义词」的两个框：打词时自动填拼音，手改过编码就不再自动填（清空了又自动填）
