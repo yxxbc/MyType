@@ -1,4 +1,4 @@
-//! 输入会话的 C 接口（`mytype_session_*`），见 core/include/mytype_core.h 和 docs/ABI.md。
+//! 输入会话的 C 接口（`mytype_session_*`），见 core/include/mytype_core.h。
 //!
 //! 会话返回的指针（`MyTypeFrame` 和里面的字符串、过渡函数返回的字符串）归会话所有，
 //! 在同一个会话的下一次调用前有效。
@@ -983,7 +983,7 @@ pub unsafe extern "C" fn mytype_session_translate_clear(
     })
 }
 
-// ---- 读会话状态、整个候选列表（候选框要整个列表），见 docs/ABI.md「输入会话」----
+// ---- 读会话状态、整个候选列表（候选框要整个列表），见 core/include/mytype_core.h「输入会话」----
 
 /// 全部原始输入（含已选词用掉的部分）。
 #[no_mangle]
