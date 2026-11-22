@@ -14,7 +14,7 @@
 
 /* 接口版本（不是 MyType 的版本）。同一个主版本里只加函数、只在结构体末尾加字段；
  * 删函数或改参数含义时升主版本。外壳启动时用 mytype_abi_version() 比对主版本。
- * 规则见 docs/ABI.md。 */
+ * 规则：同一主版本里只加函数、只在结构体末尾加字段；删函数或改参数含义时升主版本。 */
 #define MYTYPE_ABI_VERSION_MAJOR 1
 #define MYTYPE_ABI_VERSION_MINOR 14
 
@@ -339,12 +339,12 @@ const char *mytype_translate_tag(MyTypeTranslator *translator, const char *text)
 
 /* ---- 输入会话（ABI 1.3 起，1.4 加候选和分音节，1.5 加选词和学习，1.6 加选词键、翻页和展开面板，
  * 1.7 加 Ctrl+Delete 忘掉学错的词；
- * 见 docs/PORTING.md、docs/ABI.md）----
+ * 见本文件里各函数的说明）----
  *
  * 一个输入框一个会话：外壳把平台按键翻成 MyTypeKey 交给会话，按返回的 MyTypeFrame
  * 画编辑区、上屏。会话只能在一个线程里用。
  *
- * 暂定：输入行为还在一块一块从 外壳挪进来（docs/PORTING.md 第 2 步），挪完之前
+ * 暂定：输入行为还在从外壳往里挪，挪完之前
  * 这组函数不在「只加不删」的承诺里。标了「过渡」的函数挪完就删；现在 handled = 0 的意思是
  * 「会话还不管这个键」，外壳接着用自己的逻辑处理（挪完以后就是「交给应用」）。
  *
