@@ -137,6 +137,19 @@ private struct LearningPage: View {
 
 // MARK: 输入统计
 
+/// 统计柱子的宽度：90 天时也要每根至少 1pt，且总宽（含间距）不能超过卡片，
+/// 否则最右边今天的柱子会被 HStack 挤出可见区域。
+struct StatisticsBarLayout {
+    let spacing: CGFloat
+    let width: CGFloat
+
+    init(available: CGFloat, count: Int) {
+        let n = max(count, 1)
+        spacing = n > 30 ? 1 : 5
+        width = max(1, (available - spacing * CGFloat(n - 1)) / CGFloat(n))
+    }
+}
+
 private struct InputStatisticsPage: View {
     @ObservedObject var model: SettingsModel
     @Environment(\.palette) private var palette
@@ -159,24 +172,22 @@ private struct InputStatisticsPage: View {
                 // 90 天时 90 根柱子要按可用宽度算，不能再让每根 "maxWidth: .infinity"：
                 // 那样总宽会超过卡片，最右边今天的柱子会被裁掉。
                 GeometryReader { geometry in
-                    let count = max(model.inputDays.count, 1)
-                    let spacing: CGFloat = count > 30 ? 1 : 5
-                    let width = max(1, (geometry.size.width - spacing * CGFloat(count - 1)) / CGFloat(count))
-                    HStack(alignment: .bottom, spacing: spacing) {
+                    let bars = StatisticsBarLayout(available: geometry.size.width, count: model.inputDays.count)
+                    HStack(alignment: .bottom, spacing: bars.spacing) {
                         ForEach(model.inputDays) { day in
                             let isToday = day.id == model.inputDays.last?.id
                             Group {
                                 if day.count.characters == 0 {
                                     Circle()
                                         .fill(palette.cardBorder)
-                                        .frame(width: min(4, width), height: 4)
+                                        .frame(width: min(4, bars.width), height: 4)
                                 } else {
-                                    RoundedRectangle(cornerRadius: min(3, width / 2))
+                                    RoundedRectangle(cornerRadius: min(3, bars.width / 2))
                                         .fill(palette.accent.opacity(isToday ? 1 : 0.58))
-                                        .frame(width: width, height: max(3, 76 * CGFloat(day.count.characters) / scale))
+                                        .frame(width: bars.width, height: max(3, 76 * CGFloat(day.count.characters) / scale))
                                 }
                             }
-                            .frame(width: width, alignment: .bottom)
+                            .frame(width: bars.width, alignment: .bottom)
                             .help("\(day.date.formatted(date: .abbreviated, time: .omitted))：\(day.count.characters) 字，\(day.count.commits) 次")
                             .accessibilityLabel(Text(day.date, style: .date))
                             .accessibilityValue("\(day.count.characters) 字，\(day.count.commits) 次")

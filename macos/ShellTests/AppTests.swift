@@ -8,7 +8,19 @@ func runAppTests() {
     testUpdateWithLocalRelease()
     testInputLifecycle()
     testCandidateHitTesting()
+    testStatisticsBarLayout()
     testLearningAndStatisticsClear()
+}
+
+/// 90 天时每根柱子至少 1pt，且总宽不越过卡片，最右边今天的柱子不能被裁掉。
+private func testStatisticsBarLayout() {
+    for count in [7, 14, 30, 90] {
+        let bars = StatisticsBarLayout(available: 600, count: count)
+        let total = bars.width * CGFloat(count) + bars.spacing * CGFloat(count - 1)
+        check(bars.width >= 1 && total <= 600.5, "统计柱子：\(count) 天排得下", "\(bars.width) x \(count)，总宽 \(total)")
+    }
+    check(StatisticsBarLayout(available: 600, count: 90).spacing == 1, "统计柱子：90 天用 1pt 间距")
+    check(StatisticsBarLayout(available: 600, count: 14).spacing == 5, "统计柱子：14 天用 5pt 间距")
 }
 
 /// 设置窗口的清除请求：清内存 + 存空文件；统计文件被删掉。
