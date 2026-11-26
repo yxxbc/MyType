@@ -46,21 +46,25 @@ pub struct MyTypeTranslator {
 
 #[no_mangle]
 pub extern "C" fn mytype_translate_new() -> *mut MyTypeTranslator {
-    Box::into_raw(Box::new(MyTypeTranslator {
-        translator: Translator::new(),
-        state: TRANSLATE_IDLE,
-        source: CString::default(),
-        text: CString::default(),
-        error: CString::default(),
-        tag: CString::default(),
-    }))
+    crate::ffi::catch_ffi(std::ptr::null_mut(), || {
+        Box::into_raw(Box::new(MyTypeTranslator {
+            translator: Translator::new(),
+            state: TRANSLATE_IDLE,
+            source: CString::default(),
+            text: CString::default(),
+            error: CString::default(),
+            tag: CString::default(),
+        }))
+    })
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn mytype_translate_free(handle: *mut MyTypeTranslator) {
-    if !handle.is_null() {
-        drop(unsafe { Box::from_raw(handle) });
-    }
+    crate::ffi::catch_ffi((), || {
+        if !handle.is_null() {
+            drop(unsafe { Box::from_raw(handle) });
+        }
+    });
 }
 
 /// 改配置。字符串可为 NULL（当空串）；key_file 为 NULL/空串表示不带 Key。
@@ -73,24 +77,26 @@ pub unsafe extern "C" fn mytype_translate_configure(
     formal: c_int,
     key_file: *const c_char,
 ) {
-    let Some(handle) = (unsafe { handle.as_mut() }) else {
-        return;
-    };
-    let key_file = unsafe { arg(key_file) };
-    let target = unsafe { arg(target) };
-    // 本地模型的设置单独由 mytype_translate_configure_local 改，这里保留
-    let local = handle.translator.config().local;
-    handle.translator.configure(TranslateConfig {
-        base_url: unsafe { arg(base_url) },
-        model: unsafe { arg(model) },
-        target: if target.trim().is_empty() {
-            "en".to_string()
-        } else {
-            target
-        },
-        formal: formal != 0,
-        key_file: (!key_file.is_empty()).then(|| PathBuf::from(key_file)),
-        local,
+    crate::ffi::catch_ffi((), || {
+        let Some(handle) = (unsafe { handle.as_mut() }) else {
+            return;
+        };
+        let key_file = unsafe { arg(key_file) };
+        let target = unsafe { arg(target) };
+        // 本地模型的设置单独由 mytype_translate_configure_local 改，这里保留
+        let local = handle.translator.config().local;
+        handle.translator.configure(TranslateConfig {
+            base_url: unsafe { arg(base_url) },
+            model: unsafe { arg(model) },
+            target: if target.trim().is_empty() {
+                "en".to_string()
+            } else {
+                target
+            },
+            formal: formal != 0,
+            key_file: (!key_file.is_empty()).then(|| PathBuf::from(key_file)),
+            local,
+        });
     });
 }
 
@@ -105,27 +111,29 @@ pub unsafe extern "C" fn mytype_translate_configure_local(
     server: *const c_char,
     idle_secs: c_uint,
 ) {
-    let Some(handle) = (unsafe { handle.as_mut() }) else {
-        return;
-    };
-    let model = unsafe { arg(model) };
-    let mut config = handle.translator.config();
-    config.local = (!model.trim().is_empty()).then(|| crate::llama::LocalConfig {
-        model: crate::llama::expand_home(model.trim()),
-        server: {
-            let server = unsafe { arg(server) };
-            let server = server.trim();
-            if server.starts_with("~/") {
-                crate::llama::expand_home(server)
-                    .to_string_lossy()
-                    .into_owned()
-            } else {
-                server.to_string()
-            }
-        },
-        idle_secs: u64::from(idle_secs),
+    crate::ffi::catch_ffi((), || {
+        let Some(handle) = (unsafe { handle.as_mut() }) else {
+            return;
+        };
+        let model = unsafe { arg(model) };
+        let mut config = handle.translator.config();
+        config.local = (!model.trim().is_empty()).then(|| crate::llama::LocalConfig {
+            model: crate::llama::expand_home(model.trim()),
+            server: {
+                let server = unsafe { arg(server) };
+                let server = server.trim();
+                if server.starts_with("~/") {
+                    crate::llama::expand_home(server)
+                        .to_string_lossy()
+                        .into_owned()
+                } else {
+                    server.to_string()
+                }
+            },
+            idle_secs: u64::from(idle_secs),
+        });
+        handle.translator.configure(config);
     });
-    handle.translator.configure(config);
 }
 
 /// 本地模型的 llama-server 现在在跑时返回 1（ABI 1.1 起）。
@@ -133,28 +141,30 @@ pub unsafe extern "C" fn mytype_translate_configure_local(
 pub unsafe extern "C" fn mytype_translate_local_running(
     handle: *const MyTypeTranslator,
 ) -> c_int {
-    match unsafe { handle.as_ref() } {
+    crate::ffi::catch_ffi(0, || match unsafe { handle.as_ref() } {
         Some(handle) => c_int::from(handle.translator.local_running()),
         None => 0,
-    }
+    })
 }
 
 /// 停掉本地模型的 llama-server（内存压力、关掉互译时用）：配置保留，下次翻译时按需再起。
 /// 正在跑的本地请求会被取消，已经译好的结果不动（ABI 1.12 起）。
 #[no_mangle]
 pub unsafe extern "C" fn mytype_translate_release_local(handle: *mut MyTypeTranslator) {
-    if let Some(handle) = unsafe { handle.as_mut() } {
-        handle.translator.release_local();
-    }
+    crate::ffi::catch_ffi((), || {
+        if let Some(handle) = unsafe { handle.as_mut() } {
+            handle.translator.release_local();
+        }
+    });
 }
 
 /// 填了地址和模型时返回 1。
 #[no_mangle]
 pub unsafe extern "C" fn mytype_translate_ready(handle: *const MyTypeTranslator) -> c_int {
-    match unsafe { handle.as_ref() } {
+    crate::ffi::catch_ffi(0, || match unsafe { handle.as_ref() } {
         Some(handle) => c_int::from(handle.translator.config().is_ready()),
         None => 0,
-    }
+    })
 }
 
 /// 开始翻译 text（取消别的请求）；正在译或已经译好同一句话时什么也不做。
@@ -163,41 +173,49 @@ pub unsafe extern "C" fn mytype_translate_start(
     handle: *mut MyTypeTranslator,
     text: *const c_char,
 ) {
-    if let Some(handle) = unsafe { handle.as_mut() } {
-        handle.translator.start(&unsafe { arg(text) });
-    }
+    crate::ffi::catch_ffi((), || {
+        if let Some(handle) = unsafe { handle.as_mut() } {
+            handle.translator.start(&unsafe { arg(text) });
+        }
+    });
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn mytype_translate_cancel(handle: *mut MyTypeTranslator) {
-    if let Some(handle) = unsafe { handle.as_mut() } {
-        handle.translator.cancel();
-    }
+    crate::ffi::catch_ffi((), || {
+        if let Some(handle) = unsafe { handle.as_mut() } {
+            handle.translator.cancel();
+        }
+    });
 }
 
 /// 取一份当前结果的快照，返回 MYTYPE_TRANSLATE_*。
 #[no_mangle]
 pub unsafe extern "C" fn mytype_translate_poll(handle: *mut MyTypeTranslator) -> c_int {
-    let Some(handle) = (unsafe { handle.as_mut() }) else {
-        return TRANSLATE_IDLE;
-    };
-    let snap = handle.translator.poll();
-    handle.state = match snap.state {
-        JobState::Idle => TRANSLATE_IDLE,
-        JobState::Running => TRANSLATE_RUNNING,
-        JobState::Done => TRANSLATE_DONE,
-        JobState::Error => TRANSLATE_ERROR,
-    };
-    handle.source = to_c(&snap.source);
-    handle.text = to_c(&snap.text);
-    handle.error = to_c(&snap.error);
-    handle.state
+    crate::ffi::catch_ffi(TRANSLATE_IDLE, || {
+        let Some(handle) = (unsafe { handle.as_mut() }) else {
+            return TRANSLATE_IDLE;
+        };
+        let snap = handle.translator.poll();
+        handle.state = match snap.state {
+            JobState::Idle => TRANSLATE_IDLE,
+            JobState::Running => TRANSLATE_RUNNING,
+            JobState::Done => TRANSLATE_DONE,
+            JobState::Error => TRANSLATE_ERROR,
+        };
+        handle.source = to_c(&snap.source);
+        handle.text = to_c(&snap.text);
+        handle.error = to_c(&snap.error);
+        handle.state
+    })
 }
 
 /// 快照里到目前的译文（状态是 RUNNING 时可能还没写完；没有就是空串）。
 #[no_mangle]
 pub unsafe extern "C" fn mytype_translate_text(handle: *const MyTypeTranslator) -> *const c_char {
-    unsafe { handle.as_ref() }.map_or(empty(), |h| h.text.as_ptr())
+    crate::ffi::catch_ffi(empty(), || {
+        unsafe { handle.as_ref() }.map_or(empty(), |h| h.text.as_ptr())
+    })
 }
 
 /// 快照对应的原文。
@@ -205,7 +223,9 @@ pub unsafe extern "C" fn mytype_translate_text(handle: *const MyTypeTranslator) 
 pub unsafe extern "C" fn mytype_translate_source(
     handle: *const MyTypeTranslator,
 ) -> *const c_char {
-    unsafe { handle.as_ref() }.map_or(empty(), |h| h.source.as_ptr())
+    crate::ffi::catch_ffi(empty(), || {
+        unsafe { handle.as_ref() }.map_or(empty(), |h| h.source.as_ptr())
+    })
 }
 
 /// 出错时给用户看的原因。
@@ -213,7 +233,9 @@ pub unsafe extern "C" fn mytype_translate_source(
 pub unsafe extern "C" fn mytype_translate_error(
     handle: *const MyTypeTranslator,
 ) -> *const c_char {
-    unsafe { handle.as_ref() }.map_or(empty(), |h| h.error.as_ptr())
+    crate::ffi::catch_ffi(empty(), || {
+        unsafe { handle.as_ref() }.map_or(empty(), |h| h.error.as_ptr())
+    })
 }
 
 /// 面板上的方向标签（「中→英」「英→中」），按 text 判断；下一次调用前有效。
@@ -222,12 +244,14 @@ pub unsafe extern "C" fn mytype_translate_tag(
     handle: *mut MyTypeTranslator,
     text: *const c_char,
 ) -> *const c_char {
-    let Some(handle) = (unsafe { handle.as_mut() }) else {
-        return empty();
-    };
-    let tag = direction_tag(&handle.translator.config(), &unsafe { arg(text) });
-    handle.tag = to_c(&tag);
-    handle.tag.as_ptr()
+    crate::ffi::catch_ffi(empty(), || {
+        let Some(handle) = (unsafe { handle.as_mut() }) else {
+            return empty();
+        };
+        let tag = direction_tag(&handle.translator.config(), &unsafe { arg(text) });
+        handle.tag = to_c(&tag);
+        handle.tag.as_ptr()
+    })
 }
 
 #[cfg(test)]

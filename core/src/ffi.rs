@@ -28,6 +28,16 @@ pub(crate) fn set_last_error(message: impl Into<String>) {
     LAST_ERROR.with(|slot| *slot.borrow_mut() = value);
 }
 
+pub(crate) fn catch_ffi<T>(fallback: T, f: impl FnOnce() -> T) -> T {
+    match panic::catch_unwind(panic::AssertUnwindSafe(f)) {
+        Ok(val) => val,
+        Err(_) => {
+            set_last_error("Rust panic in FFI call");
+            fallback
+        }
+    }
+}
+
 unsafe fn cstr_to_str<'a>(ptr: *const c_char) -> Option<&'a str> {
     if ptr.is_null() {
         return None;
@@ -75,42 +85,46 @@ pub unsafe extern "C" fn mytype_engine_new(
     lexicon_tsv_path: *const c_char,
     bigram_tsv_path: *const c_char,
 ) -> *mut MyTypeEngineHandle {
-    let lexicon_path = match unsafe { cstr_to_str(lexicon_tsv_path) } {
-        Some(path) if !path.is_empty() => path,
-        _ => {
-            set_last_error("lexicon path is null or empty");
-            return ptr::null_mut();
-        }
-    };
-
-    let result = (|| -> anyhow::Result<Engine> {
-        let lexicon: Arc<dyn Lexicon> = crate::lexicon::open_cached(lexicon_path)?;
-        let lm: Arc<dyn LanguageModel> = match unsafe { cstr_to_str(bigram_tsv_path) } {
-            Some(path) if !path.is_empty() => crate::lm::load_lm(path)?,
-            _ => Arc::new(BigramLm::default()),
+    catch_ffi(ptr::null_mut(), || {
+        let lexicon_path = match unsafe { cstr_to_str(lexicon_tsv_path) } {
+            Some(path) if !path.is_empty() => path,
+            _ => {
+                set_last_error("lexicon path is null or empty");
+                return ptr::null_mut();
+            }
         };
-        let engine = Engine::new(lexicon, lm);
-        // 新快照已经把模糊音索引写进 .wcache 了（mmap）；旧词库/旧缓存才在这里补建，
-        // 别留到第一次按键。
-        engine.prepare_fuzzy();
-        Ok(engine)
-    })();
 
-    match result {
-        Ok(engine) => Box::into_raw(Box::new(MyTypeEngineHandle { engine })),
-        Err(error) => {
-            set_last_error(format!("{error:#}"));
-            ptr::null_mut()
+        let result = (|| -> anyhow::Result<Engine> {
+            let lexicon: Arc<dyn Lexicon> = crate::lexicon::open_cached(lexicon_path)?;
+            let lm: Arc<dyn LanguageModel> = match unsafe { cstr_to_str(bigram_tsv_path) } {
+                Some(path) if !path.is_empty() => crate::lm::load_lm(path)?,
+                _ => Arc::new(BigramLm::default()),
+            };
+            let engine = Engine::new(lexicon, lm);
+            // 新快照已经把模糊音索引写进 .wcache 了（mmap）；旧词库/旧缓存才在这里补建，
+            // 别留到第一次按键。
+            engine.prepare_fuzzy();
+            Ok(engine)
+        })();
+
+        match result {
+            Ok(engine) => Box::into_raw(Box::new(MyTypeEngineHandle { engine })),
+            Err(error) => {
+                set_last_error(format!("{error:#}"));
+                ptr::null_mut()
+            }
         }
-    }
+    })
 }
 
 /// 释放引擎。
 #[no_mangle]
 pub unsafe extern "C" fn mytype_engine_free(engine: *mut MyTypeEngineHandle) {
-    if !engine.is_null() {
-        drop(unsafe { Box::from_raw(engine) });
-    }
+    catch_ffi((), || {
+        if !engine.is_null() {
+            drop(unsafe { Box::from_raw(engine) });
+        }
+    });
 }
 
 /// 设置 beam size；返回 0 成功，-1 失败。
@@ -119,7 +133,7 @@ pub unsafe extern "C" fn mytype_engine_set_beam_size(
     engine: *mut MyTypeEngineHandle,
     beam_size: u32,
 ) -> c_int {
-    match unsafe { engine.as_mut() } {
+    catch_ffi(-1, || match unsafe { engine.as_mut() } {
         Some(handle) => {
             handle.engine.set_beam_size(beam_size as usize);
             0
@@ -128,7 +142,7 @@ pub unsafe extern "C" fn mytype_engine_set_beam_size(
             set_last_error("engine handle is null");
             -1
         }
-    }
+    })
 }
 
 /// 输入拼音串，返回候选句柄；失败返回 NULL。
@@ -233,16 +247,18 @@ pub unsafe extern "C" fn mytype_engine_record_selection(
     engine: *mut MyTypeEngineHandle,
     word: *const c_char,
 ) -> c_int {
-    if engine.is_null() {
-        set_last_error("engine is null");
-        return -1;
-    }
-    let Some(word) = (unsafe { cstr_to_str(word) }) else {
-        set_last_error("word is null or not utf8");
-        return -1;
-    };
-    unsafe { &*engine }.engine.record_selection(word);
-    0
+    catch_ffi(-1, || {
+        if engine.is_null() {
+            set_last_error("engine is null");
+            return -1;
+        }
+        let Some(word) = (unsafe { cstr_to_str(word) }) else {
+            set_last_error("word is null or not utf8");
+            return -1;
+        };
+        unsafe { &*engine }.engine.record_selection(word);
+        0
+    })
 }
 
 /// 设置光标前文本，用于上下文 bigram 特征。返回 0 表示成功。
@@ -251,16 +267,18 @@ pub unsafe extern "C" fn mytype_engine_set_context(
     engine: *mut MyTypeEngineHandle,
     text: *const c_char,
 ) -> c_int {
-    if engine.is_null() {
-        set_last_error("engine is null");
-        return -1;
-    }
-    let Some(text) = (unsafe { cstr_to_str(text) }) else {
-        set_last_error("context is null or not utf8");
-        return -1;
-    };
-    unsafe { &*engine }.engine.set_context(text);
-    0
+    catch_ffi(-1, || {
+        if engine.is_null() {
+            set_last_error("engine is null");
+            return -1;
+        }
+        let Some(text) = (unsafe { cstr_to_str(text) }) else {
+            set_last_error("context is null or not utf8");
+            return -1;
+        };
+        unsafe { &*engine }.engine.set_context(text);
+        0
+    })
 }
 
 /// 添加用户词。返回 0 成功，-1 失败（拼音非法等）。
@@ -270,25 +288,28 @@ pub unsafe extern "C" fn mytype_engine_add_user_word(
     pinyin: *const c_char,
     word: *const c_char,
 ) -> c_int {
-    if engine.is_null() {
-        set_last_error("engine is null");
-        return -1;
-    }
-    let (Some(pinyin), Some(word)) = (unsafe { cstr_to_str(pinyin) }, unsafe { cstr_to_str(word) })
-    else {
-        set_last_error("pinyin or word is null/not utf8");
-        return -1;
-    };
-    match unsafe { &*engine }
-        .engine
-        .add_user_word(pinyin, word, 5000.0)
-    {
-        Ok(()) => 0,
-        Err(e) => {
-            set_last_error(format!("{e:#}"));
-            -1
+    catch_ffi(-1, || {
+        if engine.is_null() {
+            set_last_error("engine is null");
+            return -1;
         }
-    }
+        let (Some(pinyin), Some(word)) =
+            (unsafe { cstr_to_str(pinyin) }, unsafe { cstr_to_str(word) })
+        else {
+            set_last_error("pinyin or word is null/not utf8");
+            return -1;
+        };
+        match unsafe { &*engine }
+            .engine
+            .add_user_word(pinyin, word, 5000.0)
+        {
+            Ok(()) => 0,
+            Err(e) => {
+                set_last_error(format!("{e:#}"));
+                -1
+            }
+        }
+    })
 }
 
 /// 删除用户词。返回 1 删掉了，0 没找到，-1 出错。
@@ -297,19 +318,21 @@ pub unsafe extern "C" fn mytype_engine_remove_user_word(
     engine: *mut MyTypeEngineHandle,
     word: *const c_char,
 ) -> c_int {
-    if engine.is_null() {
-        set_last_error("engine is null");
-        return -1;
-    }
-    let Some(word) = (unsafe { cstr_to_str(word) }) else {
-        set_last_error("word is null or not utf8");
-        return -1;
-    };
-    if unsafe { &*engine }.engine.remove_user_word(word) {
-        1
-    } else {
-        0
-    }
+    catch_ffi(-1, || {
+        if engine.is_null() {
+            set_last_error("engine is null");
+            return -1;
+        }
+        let Some(word) = (unsafe { cstr_to_str(word) }) else {
+            set_last_error("word is null or not utf8");
+            return -1;
+        };
+        if unsafe { &*engine }.engine.remove_user_word(word) {
+            1
+        } else {
+            0
+        }
+    })
 }
 
 /// 保存用户词到 TSV。返回 0 成功，-1 失败。
@@ -318,21 +341,23 @@ pub unsafe extern "C" fn mytype_engine_save_user_dict(
     engine: *mut MyTypeEngineHandle,
     path: *const c_char,
 ) -> c_int {
-    if engine.is_null() {
-        set_last_error("engine is null");
-        return -1;
-    }
-    let Some(path) = (unsafe { cstr_to_str(path) }) else {
-        set_last_error("path is null or not utf8");
-        return -1;
-    };
-    match unsafe { &*engine }.engine.save_user_dict(path) {
-        Ok(()) => 0,
-        Err(e) => {
-            set_last_error(format!("{e:#}"));
-            -1
+    catch_ffi(-1, || {
+        if engine.is_null() {
+            set_last_error("engine is null");
+            return -1;
         }
-    }
+        let Some(path) = (unsafe { cstr_to_str(path) }) else {
+            set_last_error("path is null or not utf8");
+            return -1;
+        };
+        match unsafe { &*engine }.engine.save_user_dict(path) {
+            Ok(()) => 0,
+            Err(e) => {
+                set_last_error(format!("{e:#}"));
+                -1
+            }
+        }
+    })
 }
 
 /// 从 TSV 载入用户词，返回载入条数，-1 表示出错。
@@ -341,21 +366,23 @@ pub unsafe extern "C" fn mytype_engine_load_user_dict(
     engine: *mut MyTypeEngineHandle,
     path: *const c_char,
 ) -> c_int {
-    if engine.is_null() {
-        set_last_error("engine is null");
-        return -1;
-    }
-    let Some(path) = (unsafe { cstr_to_str(path) }) else {
-        set_last_error("path is null or not utf8");
-        return -1;
-    };
-    match unsafe { &*engine }.engine.load_user_dict(path) {
-        Ok(n) => n as c_int,
-        Err(e) => {
-            set_last_error(format!("{e:#}"));
-            -1
+    catch_ffi(-1, || {
+        if engine.is_null() {
+            set_last_error("engine is null");
+            return -1;
         }
-    }
+        let Some(path) = (unsafe { cstr_to_str(path) }) else {
+            set_last_error("path is null or not utf8");
+            return -1;
+        };
+        match unsafe { &*engine }.engine.load_user_dict(path) {
+            Ok(n) => n as c_int,
+            Err(e) => {
+                set_last_error(format!("{e:#}"));
+                -1
+            }
+        }
+    })
 }
 
 /// 读自定义词文件（`拼音<TAB>词[<TAB>频次]`，设置界面写的 custom.tsv），整体替换上一次读到的；
@@ -365,21 +392,23 @@ pub unsafe extern "C" fn mytype_engine_load_custom_words(
     engine: *mut MyTypeEngineHandle,
     path: *const c_char,
 ) -> c_int {
-    if engine.is_null() {
-        set_last_error("engine is null");
-        return -1;
-    }
-    let Some(path) = (unsafe { cstr_to_str(path) }) else {
-        set_last_error("path is null or not utf8");
-        return -1;
-    };
-    match unsafe { &*engine }.engine.load_custom_words(path) {
-        Ok(n) => n as c_int,
-        Err(e) => {
-            set_last_error(format!("{e:#}"));
-            -1
+    catch_ffi(-1, || {
+        if engine.is_null() {
+            set_last_error("engine is null");
+            return -1;
         }
-    }
+        let Some(path) = (unsafe { cstr_to_str(path) }) else {
+            set_last_error("path is null or not utf8");
+            return -1;
+        };
+        match unsafe { &*engine }.engine.load_custom_words(path) {
+            Ok(n) => n as c_int,
+            Err(e) => {
+                set_last_error(format!("{e:#}"));
+                -1
+            }
+        }
+    })
 }
 
 /// 保存用户输入习惯（选过的词的热度、词搭配）到 TSV。返回 0 成功，-1 失败。
@@ -388,21 +417,23 @@ pub unsafe extern "C" fn mytype_engine_save_history(
     engine: *mut MyTypeEngineHandle,
     path: *const c_char,
 ) -> c_int {
-    if engine.is_null() {
-        set_last_error("engine is null");
-        return -1;
-    }
-    let Some(path) = (unsafe { cstr_to_str(path) }) else {
-        set_last_error("path is null or not utf8");
-        return -1;
-    };
-    match unsafe { &*engine }.engine.save_history(path) {
-        Ok(()) => 0,
-        Err(e) => {
-            set_last_error(format!("{e:#}"));
-            -1
+    catch_ffi(-1, || {
+        if engine.is_null() {
+            set_last_error("engine is null");
+            return -1;
         }
-    }
+        let Some(path) = (unsafe { cstr_to_str(path) }) else {
+            set_last_error("path is null or not utf8");
+            return -1;
+        };
+        match unsafe { &*engine }.engine.save_history(path) {
+            Ok(()) => 0,
+            Err(e) => {
+                set_last_error(format!("{e:#}"));
+                -1
+            }
+        }
+    })
 }
 
 /// 读回用户输入习惯，返回条数，-1 表示出错（文件不存在也是 -1）。
@@ -411,21 +442,23 @@ pub unsafe extern "C" fn mytype_engine_load_history(
     engine: *mut MyTypeEngineHandle,
     path: *const c_char,
 ) -> c_int {
-    if engine.is_null() {
-        set_last_error("engine is null");
-        return -1;
-    }
-    let Some(path) = (unsafe { cstr_to_str(path) }) else {
-        set_last_error("path is null or not utf8");
-        return -1;
-    };
-    match unsafe { &*engine }.engine.load_history(path) {
-        Ok(n) => n as c_int,
-        Err(e) => {
-            set_last_error(format!("{e:#}"));
-            -1
+    catch_ffi(-1, || {
+        if engine.is_null() {
+            set_last_error("engine is null");
+            return -1;
         }
-    }
+        let Some(path) = (unsafe { cstr_to_str(path) }) else {
+            set_last_error("path is null or not utf8");
+            return -1;
+        };
+        match unsafe { &*engine }.engine.load_history(path) {
+            Ok(n) => n as c_int,
+            Err(e) => {
+                set_last_error(format!("{e:#}"));
+                -1
+            }
+        }
+    })
 }
 
 /// 每次输入最多返回多少个整句候选（句首词候选另算）。返回 0 成功，-1 失败。
@@ -504,21 +537,23 @@ pub unsafe extern "C" fn mytype_engine_load_english(
     engine: *mut MyTypeEngineHandle,
     path: *const c_char,
 ) -> c_int {
-    if engine.is_null() {
-        set_last_error("engine is null");
-        return -1;
-    }
-    let Some(path) = (unsafe { cstr_to_str(path) }) else {
-        set_last_error("path is null or not utf8");
-        return -1;
-    };
-    match unsafe { &*engine }.engine.load_english(path) {
-        Ok(n) => n.min(c_int::MAX as usize) as c_int,
-        Err(e) => {
-            set_last_error(format!("{e:#}"));
-            -1
+    catch_ffi(-1, || {
+        if engine.is_null() {
+            set_last_error("engine is null");
+            return -1;
         }
-    }
+        let Some(path) = (unsafe { cstr_to_str(path) }) else {
+            set_last_error("path is null or not utf8");
+            return -1;
+        };
+        match unsafe { &*engine }.engine.load_english(path) {
+            Ok(n) => n.min(c_int::MAX as usize) as c_int,
+            Err(e) => {
+                set_last_error(format!("{e:#}"));
+                -1
+            }
+        }
+    })
 }
 
 /// 载入字级神经语言模型（微信输入法的 nlrgpt2_nnlm.bin）。返回字表大小，失败返回 -1。
@@ -527,21 +562,23 @@ pub unsafe extern "C" fn mytype_engine_load_nnlm(
     engine: *mut MyTypeEngineHandle,
     path: *const c_char,
 ) -> c_int {
-    if engine.is_null() {
-        set_last_error("engine is null");
-        return -1;
-    }
-    let Some(path) = (unsafe { cstr_to_str(path) }) else {
-        set_last_error("path is null or not utf8");
-        return -1;
-    };
-    match unsafe { &*engine }.engine.load_nnlm(path) {
-        Ok(n) => n.min(c_int::MAX as usize) as c_int,
-        Err(e) => {
-            set_last_error(format!("{e:#}"));
-            -1
+    catch_ffi(-1, || {
+        if engine.is_null() {
+            set_last_error("engine is null");
+            return -1;
         }
-    }
+        let Some(path) = (unsafe { cstr_to_str(path) }) else {
+            set_last_error("path is null or not utf8");
+            return -1;
+        };
+        match unsafe { &*engine }.engine.load_nnlm(path) {
+            Ok(n) => n.min(c_int::MAX as usize) as c_int,
+            Err(e) => {
+                set_last_error(format!("{e:#}"));
+                -1
+            }
+        }
+    })
 }
 
 /// 混上领域词级模型（用户自己训的 words.domain.lm）。path 为 NULL/空串时去掉。
@@ -551,22 +588,24 @@ pub unsafe extern "C" fn mytype_engine_set_domain_lm(
     engine: *mut MyTypeEngineHandle,
     path: *const c_char,
 ) -> c_int {
-    let Some(handle) = (unsafe { engine.as_mut() }) else {
-        set_last_error("engine handle is null");
-        return -1;
-    };
-    let model = match unsafe { cstr_to_str(path) } {
-        Some(path) if !path.is_empty() => match crate::lm::load_lm(path) {
-            Ok(model) => Some(model),
-            Err(e) => {
-                set_last_error(format!("{e:#}"));
-                return -1;
-            }
-        },
-        _ => None,
-    };
-    handle.engine.set_domain_lm(model);
-    0
+    catch_ffi(-1, || {
+        let Some(handle) = (unsafe { engine.as_mut() }) else {
+            set_last_error("engine handle is null");
+            return -1;
+        };
+        let model = match unsafe { cstr_to_str(path) } {
+            Some(path) if !path.is_empty() => match crate::lm::load_lm(path) {
+                Ok(model) => Some(model),
+                Err(e) => {
+                    set_last_error(format!("{e:#}"));
+                    return -1;
+                }
+            },
+            _ => None,
+        };
+        handle.engine.set_domain_lm(model);
+        0
+    })
 }
 
 /// 开关模糊音（z/zh、an/ang 等）。返回 0 成功，-1 失败。
@@ -685,21 +724,23 @@ pub unsafe extern "C" fn mytype_engine_load_conversion(
     engine: *mut MyTypeEngineHandle,
     path: *const c_char,
 ) -> c_int {
-    if engine.is_null() {
-        set_last_error("engine is null");
-        return -1;
-    }
-    let Some(path) = (unsafe { cstr_to_str(path) }) else {
-        set_last_error("path is null or not utf8");
-        return -1;
-    };
-    match unsafe { &*engine }.engine.load_conversion(path) {
-        Ok(n) => n as c_int,
-        Err(e) => {
-            set_last_error(format!("{e:#}"));
-            -1
+    catch_ffi(-1, || {
+        if engine.is_null() {
+            set_last_error("engine is null");
+            return -1;
         }
-    }
+        let Some(path) = (unsafe { cstr_to_str(path) }) else {
+            set_last_error("path is null or not utf8");
+            return -1;
+        };
+        match unsafe { &*engine }.engine.load_conversion(path) {
+            Ok(n) => n as c_int,
+            Err(e) => {
+                set_last_error(format!("{e:#}"));
+                -1
+            }
+        }
+    })
 }
 
 /// 载入五笔码表（`wubi86.tsv`：码<TAB>词<TAB>频次），替换上一次载入的，返回条数；失败返回 -1，
@@ -709,21 +750,23 @@ pub unsafe extern "C" fn mytype_engine_load_wubi(
     engine: *mut MyTypeEngineHandle,
     path: *const c_char,
 ) -> c_int {
-    if engine.is_null() {
-        set_last_error("engine is null");
-        return -1;
-    }
-    let Some(path) = (unsafe { cstr_to_str(path) }) else {
-        set_last_error("path is null or not utf8");
-        return -1;
-    };
-    match unsafe { &*engine }.engine.load_wubi(path) {
-        Ok(n) => c_int::try_from(n).unwrap_or(c_int::MAX),
-        Err(e) => {
-            set_last_error(format!("{e:#}"));
-            -1
+    catch_ffi(-1, || {
+        if engine.is_null() {
+            set_last_error("engine is null");
+            return -1;
         }
-    }
+        let Some(path) = (unsafe { cstr_to_str(path) }) else {
+            set_last_error("path is null or not utf8");
+            return -1;
+        };
+        match unsafe { &*engine }.engine.load_wubi(path) {
+            Ok(n) => c_int::try_from(n).unwrap_or(c_int::MAX),
+            Err(e) => {
+                set_last_error(format!("{e:#}"));
+                -1
+            }
+        }
+    })
 }
 
 thread_local! {
@@ -827,26 +870,28 @@ pub extern "C" fn mytype_clipboard_clear() {
 pub unsafe extern "C" fn mytype_engine_custom_phrases(
     engine: *const MyTypeEngineHandle,
 ) -> *mut MyTypeCandidates {
-    if engine.is_null() {
-        set_last_error("engine is null");
-        return ptr::null_mut();
-    }
-    let mut out = MyTypeCandidates::plain(Vec::new(), Vec::new());
-    for (code, word) in unsafe { &*engine }.engine.lexicon().custom_phrases() {
-        let (Ok(text), Ok(code), Ok(commit)) = (
-            CString::new(word.as_str()),
-            CString::new(code),
-            CString::new(crate::unescape_custom(&word)),
-        ) else {
-            continue;
-        };
-        out.texts.push(text);
-        out.scores.push(0.0);
-        out.pinyins.push(code);
-        out.consumed.push(0);
-        out.commits.push(commit);
-    }
-    Box::into_raw(Box::new(out))
+    catch_ffi(ptr::null_mut(), || {
+        if engine.is_null() {
+            set_last_error("engine is null");
+            return ptr::null_mut();
+        }
+        let mut out = MyTypeCandidates::plain(Vec::new(), Vec::new());
+        for (code, word) in unsafe { &*engine }.engine.lexicon().custom_phrases() {
+            let (Ok(text), Ok(code), Ok(commit)) = (
+                CString::new(word.as_str()),
+                CString::new(code),
+                CString::new(crate::unescape_custom(&word)),
+            ) else {
+                continue;
+            };
+            out.texts.push(text);
+            out.scores.push(0.0);
+            out.pinyins.push(code);
+            out.consumed.push(0);
+            out.commits.push(commit);
+        }
+        Box::into_raw(Box::new(out))
+    })
 }
 
 /// 符号检索。query 为拼音或中文名前缀，结果放在候选结构里（score 恒为 0）。
@@ -855,22 +900,24 @@ pub unsafe extern "C" fn mytype_symbol_search(
     query: *const c_char,
     limit: usize,
 ) -> *mut MyTypeCandidates {
-    let Some(query) = (unsafe { cstr_to_str(query) }) else {
-        set_last_error("query is null or not utf8");
-        return ptr::null_mut();
-    };
-    let mut texts = Vec::new();
-    let mut scores = Vec::new();
-    for symbol in crate::symbols::search(query, limit) {
-        match CString::new(symbol.text) {
-            Ok(text) => {
-                texts.push(text);
-                scores.push(0.0);
+    catch_ffi(ptr::null_mut(), || {
+        let Some(query) = (unsafe { cstr_to_str(query) }) else {
+            set_last_error("query is null or not utf8");
+            return ptr::null_mut();
+        };
+        let mut texts = Vec::new();
+        let mut scores = Vec::new();
+        for symbol in crate::symbols::search(query, limit) {
+            match CString::new(symbol.text) {
+                Ok(text) => {
+                    texts.push(text);
+                    scores.push(0.0);
+                }
+                Err(_) => continue,
             }
-            Err(_) => continue,
         }
-    }
-    Box::into_raw(Box::new(MyTypeCandidates::plain(texts, scores)))
+        Box::into_raw(Box::new(MyTypeCandidates::plain(texts, scores)))
+    })
 }
 
 /// 候选正好是数字字（零到十）时对应的按键 emoji（「八」-> 8️⃣），别的返回 NULL。
@@ -890,26 +937,28 @@ pub unsafe extern "C" fn mytype_emoji_recommend(
     text: *const c_char,
     limit: usize,
 ) -> *mut MyTypeCandidates {
-    let Some(text) = (unsafe { cstr_to_str(text) }) else {
-        set_last_error("text is null or not utf8");
-        return ptr::null_mut();
-    };
-    let suggestions = crate::emoji::recommend(text, limit);
-    let mut texts = Vec::new();
-    let mut commits = Vec::new();
-    for suggestion in suggestions {
-        if let (Ok(display), Ok(commit)) = (
-            CString::new(suggestion.display),
-            CString::new(suggestion.commit),
-        ) {
-            texts.push(display);
-            commits.push(commit);
+    catch_ffi(ptr::null_mut(), || {
+        let Some(text) = (unsafe { cstr_to_str(text) }) else {
+            set_last_error("text is null or not utf8");
+            return ptr::null_mut();
+        };
+        let suggestions = crate::emoji::recommend(text, limit);
+        let mut texts = Vec::new();
+        let mut commits = Vec::new();
+        for suggestion in suggestions {
+            if let (Ok(display), Ok(commit)) = (
+                CString::new(suggestion.display),
+                CString::new(suggestion.commit),
+            ) {
+                texts.push(display);
+                commits.push(commit);
+            }
         }
-    }
-    let scores = vec![0.0; texts.len()];
-    let mut out = MyTypeCandidates::plain(texts, scores);
-    out.commits = commits;
-    Box::into_raw(Box::new(out))
+        let scores = vec![0.0; texts.len()];
+        let mut out = MyTypeCandidates::plain(texts, scores);
+        out.commits = commits;
+        Box::into_raw(Box::new(out))
+    })
 }
 
 /// 日期、时间候选：key 是触发词（riqi / shijian / xingqi / date / time，可带隔音符），
@@ -925,31 +974,35 @@ pub unsafe extern "C" fn mytype_datetime_candidates(
     second: c_int,
     weekday: c_int,
 ) -> *mut MyTypeCandidates {
-    let Some(key) = (unsafe { cstr_to_str(key) }) else {
-        set_last_error("key is null or not utf8");
-        return ptr::null_mut();
-    };
-    let now = crate::datetime::LocalTime {
-        year,
-        month: month.max(0) as u32,
-        day: day.max(0) as u32,
-        hour: hour.max(0) as u32,
-        minute: minute.max(0) as u32,
-        second: second.max(0) as u32,
-        weekday: weekday.max(0) as u32,
-    };
-    plain_candidates(crate::datetime::candidates(key, &now))
+    catch_ffi(ptr::null_mut(), || {
+        let Some(key) = (unsafe { cstr_to_str(key) }) else {
+            set_last_error("key is null or not utf8");
+            return ptr::null_mut();
+        };
+        let now = crate::datetime::LocalTime {
+            year,
+            month: month.max(0) as u32,
+            day: day.max(0) as u32,
+            hour: hour.max(0) as u32,
+            minute: minute.max(0) as u32,
+            second: second.max(0) as u32,
+            weekday: weekday.max(0) as u32,
+        };
+        plain_candidates(crate::datetime::candidates(key, &now))
+    })
 }
 
 /// V 模式计算器：expr 是 v 后面的算式。算得出来时给「结果」「算式=结果」，
 /// 没写完时只给算式本身。
 #[no_mangle]
 pub unsafe extern "C" fn mytype_calc_candidates(expr: *const c_char) -> *mut MyTypeCandidates {
-    let Some(expr) = (unsafe { cstr_to_str(expr) }) else {
-        set_last_error("expr is null or not utf8");
-        return ptr::null_mut();
-    };
-    plain_candidates(crate::calc::candidates(expr))
+    catch_ffi(ptr::null_mut(), || {
+        let Some(expr) = (unsafe { cstr_to_str(expr) }) else {
+            set_last_error("expr is null or not utf8");
+            return ptr::null_mut();
+        };
+        plain_candidates(crate::calc::candidates(expr))
+    })
 }
 
 fn plain_candidates(list: Vec<String>) -> *mut MyTypeCandidates {
@@ -969,19 +1022,21 @@ pub unsafe extern "C" fn mytype_engine_emoji_search(
     query: *const c_char,
     limit: usize,
 ) -> *mut MyTypeCandidates {
-    let Some(query) = (unsafe { cstr_to_str(query) }) else {
-        set_last_error("query is null or not utf8");
-        return ptr::null_mut();
-    };
-    let engine = unsafe { engine.as_ref() }.map(|handle| &handle.engine);
-    let results = crate::emoji::panel_search(engine, query, limit);
-    let texts: Vec<CString> = results
-        .into_iter()
-        .take(limit.max(1))
-        .filter_map(|t| CString::new(t).ok())
-        .collect();
-    let scores = vec![0.0; texts.len()];
-    Box::into_raw(Box::new(MyTypeCandidates::plain(texts, scores)))
+    catch_ffi(ptr::null_mut(), || {
+        let Some(query) = (unsafe { cstr_to_str(query) }) else {
+            set_last_error("query is null or not utf8");
+            return ptr::null_mut();
+        };
+        let engine = unsafe { engine.as_ref() }.map(|handle| &handle.engine);
+        let results = crate::emoji::panel_search(engine, query, limit);
+        let texts: Vec<CString> = results
+            .into_iter()
+            .take(limit.max(1))
+            .filter_map(|t| CString::new(t).ok())
+            .collect();
+        let scores = vec![0.0; texts.len()];
+        Box::into_raw(Box::new(MyTypeCandidates::plain(texts, scores)))
+    })
 }
 
 /// 选中后上屏的文字：emoji 推荐的结果可能和显示的不一样，其他候选就是 text。越界返回 NULL。
@@ -1003,19 +1058,21 @@ pub unsafe extern "C" fn mytype_engine_record_selection_ex(
     word: *const c_char,
     pinyin: *const c_char,
 ) -> c_int {
-    if engine.is_null() {
-        set_last_error("engine is null");
-        return -1;
-    }
-    let Some(word) = (unsafe { cstr_to_str(word) }) else {
-        set_last_error("word is null or not utf8");
-        return -1;
-    };
-    let pinyin = unsafe { cstr_to_str(pinyin) }.filter(|p| !p.is_empty());
-    unsafe { &*engine }
-        .engine
-        .record_selection_with_pinyin(word, pinyin);
-    0
+    catch_ffi(-1, || {
+        if engine.is_null() {
+            set_last_error("engine is null");
+            return -1;
+        }
+        let Some(word) = (unsafe { cstr_to_str(word) }) else {
+            set_last_error("word is null or not utf8");
+            return -1;
+        };
+        let pinyin = unsafe { cstr_to_str(pinyin) }.filter(|p| !p.is_empty());
+        unsafe { &*engine }
+            .engine
+            .record_selection_with_pinyin(word, pinyin);
+        0
+    })
 }
 
 /// 候选数量。
@@ -1076,9 +1133,11 @@ pub unsafe extern "C" fn mytype_candidates_consumed(
 /// 释放候选集合。
 #[no_mangle]
 pub unsafe extern "C" fn mytype_candidates_free(candidates: *mut MyTypeCandidates) {
-    if !candidates.is_null() {
-        drop(unsafe { Box::from_raw(candidates) });
-    }
+    catch_ffi((), || {
+        if !candidates.is_null() {
+            drop(unsafe { Box::from_raw(candidates) });
+        }
+    });
 }
 
 thread_local! {
@@ -1092,18 +1151,20 @@ pub unsafe extern "C" fn mytype_segment_input(
     input: *const c_char,
     pinyin: *const c_char,
 ) -> *const c_char {
-    let (Some(input), Some(pinyin)) = (unsafe { cstr_to_str(input) }, unsafe {
-        cstr_to_str(pinyin)
-    }) else {
-        return ptr::null();
-    };
-    match crate::preedit::segment_input(input, pinyin).and_then(|s| CString::new(s).ok()) {
-        Some(text) => SEGMENTED.with(|slot| {
-            *slot.borrow_mut() = text;
-            slot.borrow().as_ptr()
-        }),
-        None => ptr::null(),
-    }
+    catch_ffi(ptr::null(), || {
+        let (Some(input), Some(pinyin)) = (unsafe { cstr_to_str(input) }, unsafe {
+            cstr_to_str(pinyin)
+        }) else {
+            return ptr::null();
+        };
+        match crate::preedit::segment_input(input, pinyin).and_then(|s| CString::new(s).ok()) {
+            Some(text) => SEGMENTED.with(|slot| {
+                *slot.borrow_mut() = text;
+                slot.borrow().as_ptr()
+            }),
+            None => ptr::null(),
+        }
+    })
 }
 
 thread_local! {
@@ -1118,21 +1179,23 @@ pub unsafe extern "C" fn mytype_custom_code(
     text: *const c_char,
     pinyin_only: c_int,
 ) -> *const c_char {
-    let Some(text) = (unsafe { cstr_to_str(text) }) else {
-        return ptr::null();
-    };
-    let code = if pinyin_only != 0 {
-        crate::lexicon::normalize_pinyin(text)
-    } else {
-        crate::lexicon::normalize_code(text)
-    };
-    match code.and_then(|s| CString::new(s).ok()) {
-        Some(code) => CUSTOM_CODE.with(|slot| {
-            *slot.borrow_mut() = code;
-            slot.borrow().as_ptr()
-        }),
-        None => ptr::null(),
-    }
+    catch_ffi(ptr::null(), || {
+        let Some(text) = (unsafe { cstr_to_str(text) }) else {
+            return ptr::null();
+        };
+        let code = if pinyin_only != 0 {
+            crate::lexicon::normalize_pinyin(text)
+        } else {
+            crate::lexicon::normalize_code(text)
+        };
+        match code.and_then(|s| CString::new(s).ok()) {
+            Some(code) => CUSTOM_CODE.with(|slot| {
+                *slot.borrow_mut() = code;
+                slot.borrow().as_ptr()
+            }),
+            None => ptr::null(),
+        }
+    })
 }
 
 /// 在词库原文（拼音<TAB>词<TAB>频次）里猜词的拼音，整理成空格分开的音节；猜不出返回 NULL。
@@ -1143,20 +1206,22 @@ pub unsafe extern "C" fn mytype_guess_pinyin(
     len: usize,
     word: *const c_char,
 ) -> *const c_char {
-    let Some(word) = (unsafe { cstr_to_str(word) }) else {
-        return ptr::null();
-    };
-    if lexicon.is_null() || len == 0 {
-        return ptr::null();
-    }
-    let lexicon = unsafe { std::slice::from_raw_parts(lexicon.cast::<u8>(), len) };
-    match crate::lexicon::guess_pinyin(lexicon, word).and_then(|s| CString::new(s).ok()) {
-        Some(code) => CUSTOM_CODE.with(|slot| {
-            *slot.borrow_mut() = code;
-            slot.borrow().as_ptr()
-        }),
-        None => ptr::null(),
-    }
+    catch_ffi(ptr::null(), || {
+        let Some(word) = (unsafe { cstr_to_str(word) }) else {
+            return ptr::null();
+        };
+        if lexicon.is_null() || len == 0 {
+            return ptr::null();
+        }
+        let lexicon = unsafe { std::slice::from_raw_parts(lexicon.cast::<u8>(), len) };
+        match crate::lexicon::guess_pinyin(lexicon, word).and_then(|s| CString::new(s).ok()) {
+            Some(code) => CUSTOM_CODE.with(|slot| {
+                *slot.borrow_mut() = code;
+                slot.borrow().as_ptr()
+            }),
+            None => ptr::null(),
+        }
+    })
 }
 
 /// 最近一次错误。返回的指针在下一次调用本 API 前有效。

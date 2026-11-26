@@ -100,11 +100,11 @@ impl ModelSlot {
         }
         let slot = self.clone();
         let dir = dir.to_path_buf();
-        std::thread::Builder::new()
+        if let Err(e) = std::thread::Builder::new()
             .name("mytype-voice-model".into())
             .spawn(move || {
                 let result = wtlocal::load(&dir).map(|_| ());
-                *slot.state.lock().unwrap() = match result {
+                *slot.state.lock().unwrap_or_else(|p| p.into_inner()) = match result {
                     Ok(()) => ModelState::Ready,
                     Err(e) => {
                         eprintln!("mytype: 语音模型不可用：{e:#}");
@@ -113,7 +113,12 @@ impl ModelSlot {
                 };
                 slot.changed.notify_all();
             })
-            .expect("spawn model thread");
+        {
+            *self.state.lock().unwrap_or_else(|p| p.into_inner()) =
+                ModelState::Failed(format!("无法启动模型加载线程：{e}"));
+            self.changed.notify_all();
+            return false;
+        }
         true
     }
 
@@ -292,7 +297,6 @@ impl MyTypeVoice {
     }
 
     fn poll(&mut self) -> c_int {
-        let now = Instant::now();
         let (phase, text, voice_at) = {
             let shared = self.shared.lock().unwrap();
             (shared.phase, shared.text.clone(), shared.voice_at)
@@ -300,9 +304,7 @@ impl MyTypeVoice {
         if let Some(at) = voice_at {
             self.trigger.note_voice(at);
         }
-        if let Some(action) = self.trigger.tick(now) {
-            self.apply(vec![action]);
-        }
+        // 连续监听期间不因说话停顿（静音超时）自动切断，由用户再次按键或 MAX_RECORDING 上限结束。
         // 工作线程自己停了（到了时长上限、开不了麦克风）：热键状态机跟着复位
         if phase != VOICE_LISTENING && self.trigger.is_recording() {
             self.trigger = VoiceTrigger::new(TriggerConfig::default());
@@ -508,115 +510,131 @@ impl Worker {
 /// 不碰麦克风、不读模型，第一次按热键时才读；从来不下载（模型在设置界面里下载）。
 #[no_mangle]
 pub unsafe extern "C" fn mytype_voice_new(model_dir: *const c_char) -> *mut MyTypeVoice {
-    let dir = if model_dir.is_null() {
-        None
-    } else {
-        unsafe { CStr::from_ptr(model_dir) }
-            .to_str()
-            .ok()
-            .filter(|s| !s.is_empty())
-            .map(PathBuf::from)
-    };
-    let dir = dir.unwrap_or_else(download::default_dir);
-    Box::into_raw(Box::new(MyTypeVoice::new(dir)))
+    crate::ffi::catch_ffi(std::ptr::null_mut(), || {
+        let dir = if model_dir.is_null() {
+            None
+        } else {
+            unsafe { CStr::from_ptr(model_dir) }
+                .to_str()
+                .ok()
+                .filter(|s| !s.is_empty())
+                .map(PathBuf::from)
+        };
+        let dir = dir.unwrap_or_else(download::default_dir);
+        Box::into_raw(Box::new(MyTypeVoice::new(dir)))
+    })
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn mytype_voice_free(voice: *mut MyTypeVoice) {
-    if !voice.is_null() {
-        let mut voice = unsafe { Box::from_raw(voice) };
-        voice.cancel();
-    }
+    crate::ffi::catch_ffi((), || {
+        if !voice.is_null() {
+            let mut voice = unsafe { Box::from_raw(voice) };
+            voice.cancel();
+        }
+    });
 }
 
 /// 影响下一次打开麦克风；WAV 回放不处理系统播放。
 #[no_mangle]
 pub unsafe extern "C" fn mytype_voice_set_duck_playback(voice: *mut MyTypeVoice, enabled: c_int) {
-    if let Some(voice) = unsafe { voice.as_mut() } {
-        voice.duck_playback = enabled != 0;
-    }
+    crate::ffi::catch_ffi((), || {
+        if let Some(voice) = unsafe { voice.as_mut() } {
+            voice.duck_playback = enabled != 0;
+        }
+    });
 }
 
 /// 热键按下。
 #[no_mangle]
 pub unsafe extern "C" fn mytype_voice_key_down(voice: *mut MyTypeVoice) {
-    if let Some(voice) = unsafe { voice.as_mut() } {
-        let actions = voice.trigger.on_down(Instant::now());
-        voice.apply(actions);
-    }
+    crate::ffi::catch_ffi((), || {
+        if let Some(voice) = unsafe { voice.as_mut() } {
+            let actions = voice.trigger.on_down(Instant::now());
+            voice.apply(actions);
+        }
+    });
 }
 
-/// 热键松开。按住超过 300ms 算长按，松开即结束；更短算点按，继续听到说完（静音 1.5 秒）或再按一次。
+/// 热键松开。按住超过 300ms 算长按，松开即结束；更短算点按，继续听到再次按键结束。
 #[no_mangle]
 pub unsafe extern "C" fn mytype_voice_key_up(voice: *mut MyTypeVoice) {
-    if let Some(voice) = unsafe { voice.as_mut() } {
-        let actions = voice.trigger.on_up(Instant::now());
-        voice.apply(actions);
-    }
+    crate::ffi::catch_ffi((), || {
+        if let Some(voice) = unsafe { voice.as_mut() } {
+            let actions = voice.trigger.on_up(Instant::now());
+            voice.apply(actions);
+        }
+    });
 }
 
 /// 快捷键再按一下：不管当前是长按还是点按，都结束录音并出结果（ABI 1.14 起）。
 #[no_mangle]
 pub unsafe extern "C" fn mytype_voice_finish(voice: *mut MyTypeVoice) {
-    if let Some(voice) = unsafe { voice.as_mut() } {
-        if let Some(action) = voice.trigger.finish() {
-            voice.apply(vec![action]);
+    crate::ffi::catch_ffi((), || {
+        if let Some(voice) = unsafe { voice.as_mut() } {
+            if let Some(action) = voice.trigger.finish() {
+                voice.apply(vec![action]);
+            }
         }
-    }
+    });
 }
 
 /// 不要这次的结果（按了 Esc、切走了输入框）。
 #[no_mangle]
 pub unsafe extern "C" fn mytype_voice_cancel(voice: *mut MyTypeVoice) {
-    if let Some(voice) = unsafe { voice.as_mut() } {
-        voice.cancel();
-    }
+    crate::ffi::catch_ffi((), || {
+        if let Some(voice) = unsafe { voice.as_mut() } {
+            voice.cancel();
+        }
+    });
 }
 
-/// 定时调用：推进状态机（点按模式的静音结束），返回 VOICE_* 状态。
+/// 定时调用：推进状态，返回 VOICE_* 状态。
 /// 文本用 mytype_voice_text 取。
 #[no_mangle]
 pub unsafe extern "C" fn mytype_voice_poll(voice: *mut MyTypeVoice) -> c_int {
-    match unsafe { voice.as_mut() } {
+    crate::ffi::catch_ffi(VOICE_IDLE, || match unsafe { voice.as_mut() } {
         Some(voice) => voice.poll(),
         None => VOICE_IDLE,
-    }
+    })
 }
 
 /// 上一次 poll 对应的文本；下一次 poll 或释放前有效。
 #[no_mangle]
 pub unsafe extern "C" fn mytype_voice_text(voice: *const MyTypeVoice) -> *const c_char {
-    match unsafe { voice.as_ref() } {
-        Some(voice) => voice.text.as_ptr(),
-        None => EMPTY.as_ptr() as *const c_char,
-    }
+    crate::ffi::catch_ffi(EMPTY.as_ptr() as *const c_char, || {
+        match unsafe { voice.as_ref() } {
+            Some(voice) => voice.text.as_ptr(),
+            None => EMPTY.as_ptr() as *const c_char,
+        }
+    })
 }
 
 /// 正在听时最近的音量，0–100。
 #[no_mangle]
 pub unsafe extern "C" fn mytype_voice_level(voice: *const MyTypeVoice) -> c_int {
-    match unsafe { voice.as_ref() } {
+    crate::ffi::catch_ffi(0, || match unsafe { voice.as_ref() } {
         Some(voice) => c_int::from(voice.shared.lock().unwrap().level),
         None => 0,
-    }
+    })
 }
 
 /// 模型状态，MODEL_*。
 #[no_mangle]
 pub unsafe extern "C" fn mytype_voice_model_state(voice: *const MyTypeVoice) -> c_int {
-    match unsafe { voice.as_ref() } {
+    crate::ffi::catch_ffi(MODEL_NONE, || match unsafe { voice.as_ref() } {
         Some(voice) => voice.model.code(),
         None => MODEL_NONE,
-    }
+    })
 }
 
 /// 是否点按模式（松开热键后还在听）。
 #[no_mangle]
 pub unsafe extern "C" fn mytype_voice_is_tap(voice: *const MyTypeVoice) -> c_int {
-    match unsafe { voice.as_ref() } {
+    crate::ffi::catch_ffi(0, || match unsafe { voice.as_ref() } {
         Some(voice) => (voice.trigger.is_recording() && voice.trigger.mode() == Mode::Tap) as c_int,
         None => 0,
-    }
+    })
 }
 
 #[cfg(test)]

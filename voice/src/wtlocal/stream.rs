@@ -28,7 +28,9 @@ pub struct Stream {
     m: Arc<Model>,
     fb: Fbank,
     feats: Vec<[f32; DIM]>,
+    scratch: Vec<[f32; DIM]>,
     ids: Vec<u32>,
+    ids_scratch: Vec<u32>,
     s: usize,
     fresh: usize,
 }
@@ -39,7 +41,9 @@ impl Stream {
             m,
             fb: Fbank::new(),
             feats: Vec::new(),
+            scratch: Vec::new(),
             ids: Vec::new(),
+            ids_scratch: Vec::new(),
             s: 0,
             fresh: 0,
         }
@@ -60,11 +64,12 @@ impl Stream {
     }
 
     /// 解码 [s - prev, end) 并补 pad 帧静音，返回 s 之后的输出帧
-    fn decode(&self, prev: usize, end: usize, pad: usize) -> Vec<u32> {
+    fn decode(&mut self, prev: usize, end: usize, pad: usize) -> Vec<u32> {
         let a = self.s.saturating_sub(prev);
-        let mut x = self.feats[a..end].to_vec();
-        x.resize(x.len() + pad, self.fb.silence());
-        let out = self.m.forward(&x);
+        self.scratch.clear();
+        self.scratch.extend_from_slice(&self.feats[a..end]);
+        self.scratch.resize(self.scratch.len() + pad, self.fb.silence());
+        let out = self.m.forward(&self.scratch);
         out.get((self.s - a) / 5..).unwrap_or_default().to_vec()
     }
 
@@ -90,15 +95,23 @@ impl Stream {
     /// 中间结果，尾部临时解码带 `prev` 帧前文（评测用）。
     pub fn partial_with(&mut self, prev: usize) -> String {
         self.fresh = 0;
-        let mut ids = self.ids.clone();
-        if self.feats.len() > self.s {
-            ids.extend(self.decode(prev, self.feats.len(), PAD));
+        let tail = if self.feats.len() > self.s {
+            Some(self.decode(prev, self.feats.len(), PAD))
+        } else {
+            None
+        };
+        self.ids_scratch.clear();
+        self.ids_scratch.extend_from_slice(&self.ids);
+        if let Some(tail) = tail {
+            self.ids_scratch.extend(tail);
         }
-        tidy(&self.m.text(&ids)).trim_end_matches(PUNCT).to_string()
+        tidy(&self.m.text(&self.ids_scratch))
+            .trim_end_matches(PUNCT)
+            .to_string()
     }
 
     pub fn finish(&mut self) -> String {
-        self.finish_with(FinalMode::Whole)
+        self.finish_with(FinalMode::WholePad)
     }
 
     /// 定稿的几种算法（评测用，`mytype-asr-eval` 比较它们）。
@@ -109,9 +122,10 @@ impl Stream {
             FinalMode::Blocks => None,
         };
         if let Some(pad) = whole.filter(|_| self.feats.len() <= WHOLE_MAX) {
-            let mut x = self.feats.clone();
-            x.resize(x.len() + pad, self.fb.silence());
-            let ids = self.m.forward(&x);
+            self.scratch.clear();
+            self.scratch.extend_from_slice(&self.feats);
+            self.scratch.resize(self.scratch.len() + pad, self.fb.silence());
+            let ids = self.m.forward(&self.scratch);
             return tidy(&self.m.text(&ids));
         }
         if self.feats.len() > self.s {

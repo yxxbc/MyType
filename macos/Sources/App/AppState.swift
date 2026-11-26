@@ -4,6 +4,7 @@ import AppKit
 
 final class AppState {
     static let shared = AppState()
+    static let lexiconStateChanged = Notification.Name("io.github.yxxbc.MyType.lexiconStateChanged")
 
     /// 后台载入完成前是 nil；输入控制器每次按键时来取（换词库时换成新的）。
     private(set) var engine: Engine?
@@ -52,6 +53,10 @@ final class AppState {
     private var missingLexiconLogged: String?
     /// 上一次看系统剪贴板时它的 changeCount（没变就不读）
     private var clipboardChangeCount = -1
+    /// 后台监听 supportDir 变更（避免在按键主线程上做文件 stat）
+    private var dirMonitor: DispatchSourceFileSystemObject?
+    private var dirMonitorFd: Int32 = -1
+    private var bgPollTimer: DispatchSourceTimer?
 
     private init() {
         AppState.migrateLegacyConfig(in: supportDir)
@@ -296,13 +301,68 @@ final class AppState {
         // 设置窗口在输入法没跑的时候点了「清除学习数据/统计」：请求文件还在，先处理
         clearLearningIfRequested()
         clearStatisticsIfRequested()
+        startBackgroundWatcher()
         if engine == nil && loading == nil { loadEngineInBackground() }
     }
 
     func deactivateInputClient(_ client: MyTypeInputController) {
         guard activeInputClient === client else { return }
         activeInputClient = nil
+        stopBackgroundWatcher()
         scheduleEngineReclaim()
+    }
+
+    private func startBackgroundWatcher() {
+        if dirMonitor == nil {
+            let fd = open(supportDir.path, O_EVTONLY)
+            if fd >= 0 {
+                dirMonitorFd = fd
+                let source = DispatchSource.makeFileSystemObjectSource(
+                    fileDescriptor: fd,
+                    eventMask: [.write, .rename, .delete],
+                    queue: DispatchQueue.global(qos: .utility)
+                )
+                source.setEventHandler { [weak self] in
+                    DispatchQueue.main.async {
+                        self?.checkForChanges(force: true)
+                    }
+                }
+                source.setCancelHandler { [weak self] in
+                    if let fd = self?.dirMonitorFd, fd >= 0 {
+                        close(fd)
+                        self?.dirMonitorFd = -1
+                    }
+                }
+                source.resume()
+                dirMonitor = source
+            }
+        }
+        if bgPollTimer == nil {
+            let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
+            timer.schedule(deadline: .now() + 2, repeating: 2)
+            timer.setEventHandler { [weak self] in
+                guard let self else { return }
+                let hasLlama = !self.findLlamaServer().isEmpty
+                DispatchQueue.main.async {
+                    // 在主线程安全比对 stamp / llamaProbe，完全不阻塞按键路径
+                    if hasLlama && self.translator != nil && self.llamaServerInUse.isEmpty {
+                        self.checkForChanges(force: true)
+                    } else if let wanted = self.lexiconPath(),
+                              wanted != self.lexiconInUse || FileStamp(wanted) != self.lexiconStamp {
+                        self.checkForChanges(force: true)
+                    }
+                }
+            }
+            timer.resume()
+            bgPollTimer = timer
+        }
+    }
+
+    private func stopBackgroundWatcher() {
+        dirMonitor?.cancel()
+        dirMonitor = nil
+        bgPollTimer?.cancel()
+        bgPollTimer = nil
     }
 
     private func scheduleEngineReclaim() {
@@ -343,6 +403,8 @@ final class AppState {
         }
         let job = EngineLoad(path: lexicon)
         loading = job
+        DistributedNotificationCenter.default().postNotificationName(
+            AppState.lexiconStateChanged, object: "loading", userInfo: nil, deliverImmediately: true)
         job.done.enter()
         DispatchQueue.global(qos: .userInitiated).async {
             job.result = self.makeEngine(lexicon: lexicon, loadLearning: false)
@@ -365,6 +427,10 @@ final class AppState {
               Date().timeIntervalSince(job.start))
         guard let prepared = job.result, saveLearning() else {
             loading = nil
+            if job.result == nil {
+                DistributedNotificationCenter.default().postNotificationName(
+                    AppState.lexiconStateChanged, object: "failed", userInfo: nil, deliverImmediately: true)
+            }
             afterEngineLoad()
             return
         }
@@ -387,6 +453,8 @@ final class AppState {
         engine = prepared
         lexiconInUse = job.path
         lexiconStamp = job.stamp
+        DistributedNotificationCenter.default().postNotificationName(
+            AppState.lexiconStateChanged, object: "ready", userInfo: nil, deliverImmediately: true)
         afterEngineLoad()
     }
 

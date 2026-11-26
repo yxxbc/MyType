@@ -127,7 +127,7 @@ impl UserPairs {
                     (prev.to_string(), cur.to_string(), entry, decayed(entry, at_ms))
                 })
                 .collect();
-            rows.sort_by(|a, b| b.3.total_cmp(&a.3));
+            rows.select_nth_unstable_by(max, |a, b| b.3.total_cmp(&a.3));
             rows.truncate(max);
             self.map.clear();
             for (prev, cur, entry, _) in rows {
@@ -151,7 +151,7 @@ pub fn prune_words(
             .iter()
             .map(|(word, entry)| (word.clone(), *entry, decayed(*entry, at_ms)))
             .collect();
-        rows.sort_by(|a, b| b.2.total_cmp(&a.2));
+        rows.select_nth_unstable_by(max, |a, b| b.2.total_cmp(&a.2));
         rows.truncate(max);
         words.clear();
         for (word, entry, _) in rows {

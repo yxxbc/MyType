@@ -65,9 +65,12 @@ class MyTypeInputController: IMKInputController {
     }
 
     /// 词库载入完了、换了词库、改了设置：照 AppState 更新这个输入框的会话。
+    /// 仅在切入输入框（force: true）时同步检查磁盘变更；按键路径只读内存状态，由后台监听驱动重载。
     private func syncComposer(force: Bool = false) {
         let state = AppState.shared
-        state.checkForChanges(force: force)
+        if force {
+            state.checkForChanges(force: true)
+        }
         composer.setEngine(state.engine)
         composer.setTranslator(state.translator)
         if configGeneration != state.configGeneration {

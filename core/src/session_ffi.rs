@@ -651,27 +651,29 @@ pub unsafe extern "C" fn mytype_session_new(
     engine: *mut MyTypeEngineHandle,
     config: *const MyTypeSessionConfig,
 ) -> *mut MyTypeSession {
-    let mut session = Session::new();
-    session.set_engine(unsafe { engine_ref(engine) });
-    if !config.is_null() {
-        session.configure(unsafe { read_sized(config, (*config).size) }.to_config());
-    }
-    let mut handle = Box::new(MyTypeSession {
-        session,
-        c_candidates: Vec::new(),
-        c_generation: 0,
-        frame: MyTypeFrame::default(),
-        commit: None,
-        preedit: CString::default(),
-        shown_start: 0,
-        last_choice: None,
-        text: CString::default(),
-        translate: Default::default(),
-        aux: CString::default(),
-        backend: None,
-    });
-    handle.current(false);
-    Box::into_raw(handle)
+    crate::ffi::catch_ffi(ptr::null_mut(), || {
+        let mut session = Session::new();
+        session.set_engine(unsafe { engine_ref(engine) });
+        if !config.is_null() {
+            session.configure(unsafe { read_sized(config, (*config).size) }.to_config());
+        }
+        let mut handle = Box::new(MyTypeSession {
+            session,
+            c_candidates: Vec::new(),
+            c_generation: 0,
+            frame: MyTypeFrame::default(),
+            commit: None,
+            preedit: CString::default(),
+            shown_start: 0,
+            last_choice: None,
+            text: CString::default(),
+            translate: Default::default(),
+            aux: CString::default(),
+            backend: None,
+        });
+        handle.current(false);
+        Box::into_raw(handle)
+    })
 }
 
 /// 换引擎（词库在后台载入好了），可以传 NULL。
@@ -680,9 +682,11 @@ pub unsafe extern "C" fn mytype_session_set_engine(
     session: *mut MyTypeSession,
     engine: *mut MyTypeEngineHandle,
 ) {
-    if let Some(handle) = unsafe { session.as_mut() } {
-        handle.session.set_engine(unsafe { engine_ref(engine) });
-    }
+    crate::ffi::catch_ffi((), || {
+        if let Some(handle) = unsafe { session.as_mut() } {
+            handle.session.set_engine(unsafe { engine_ref(engine) });
+        }
+    });
 }
 
 /// 改设置。config 为 NULL 时全用默认。
@@ -691,15 +695,17 @@ pub unsafe extern "C" fn mytype_session_configure(
     session: *mut MyTypeSession,
     config: *const MyTypeSessionConfig,
 ) {
-    let Some(handle) = (unsafe { session.as_mut() }) else {
-        return;
-    };
-    let config = if config.is_null() {
-        Config::default()
-    } else {
-        unsafe { read_sized(config, (*config).size) }.to_config()
-    };
-    handle.session.configure(config);
+    crate::ffi::catch_ffi((), || {
+        let Some(handle) = (unsafe { session.as_mut() }) else {
+            return;
+        };
+        let config = if config.is_null() {
+            Config::default()
+        } else {
+            unsafe { read_sized(config, (*config).size) }.to_config()
+        };
+        handle.session.configure(config);
+    });
 }
 
 /// 现在的编辑区（不处理按键，handled 为 0）。session 为 NULL 时返回 NULL。
@@ -707,17 +713,19 @@ pub unsafe extern "C" fn mytype_session_configure(
 pub unsafe extern "C" fn mytype_session_frame(
     session: *mut MyTypeSession,
 ) -> *const MyTypeFrame {
-    match unsafe { session.as_mut() } {
+    crate::ffi::catch_ffi(ptr::null(), || match unsafe { session.as_mut() } {
         Some(handle) => handle.current(false),
         None => ptr::null(),
-    }
+    })
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn mytype_session_free(session: *mut MyTypeSession) {
-    if !session.is_null() {
-        drop(unsafe { Box::from_raw(session) });
-    }
+    crate::ffi::catch_ffi((), || {
+        if !session.is_null() {
+            drop(unsafe { Box::from_raw(session) });
+        }
+    });
 }
 
 /// 处理一次按键。session 或 key 为 NULL 时返回 NULL。
@@ -817,7 +825,9 @@ pub unsafe extern "C" fn mytype_session_set_mode(
 /// 现在的输入模式，`MYTYPE_MODE_*`；session 为 NULL 时是中文。（1.10 起）
 #[no_mangle]
 pub unsafe extern "C" fn mytype_session_mode(session: *const MyTypeSession) -> c_int {
-    unsafe { session.as_ref() }.map_or(MYTYPE_MODE_CHINESE, |handle| mode_to_c(handle.session.mode()))
+    crate::ffi::catch_ffi(MYTYPE_MODE_CHINESE, || {
+        unsafe { session.as_ref() }.map_or(MYTYPE_MODE_CHINESE, |handle| mode_to_c(handle.session.mode()))
+    })
 }
 
 /// 互译用核心的翻译器；NULL 表示没有翻译器。翻译器要比会话活得久，
@@ -827,17 +837,19 @@ pub unsafe extern "C" fn mytype_session_set_translator(
     session: *mut MyTypeSession,
     translator: *mut crate::translate_ffi::MyTypeTranslator,
 ) {
-    let Some(handle) = (unsafe { session.as_mut() }) else {
-        return;
-    };
-    // 生命周期由外壳保证（和引擎一样）
-    let backend: Option<&'static dyn crate::session::TranslateBackend> =
-        unsafe { translator.as_ref() }.map(|t| {
-            let inner: &dyn crate::session::TranslateBackend = &t.translator;
-            unsafe { &*(inner as *const dyn crate::session::TranslateBackend) }
-        });
-    handle.session.set_translator(backend);
-    handle.backend = None;
+    crate::ffi::catch_ffi((), || {
+        let Some(handle) = (unsafe { session.as_mut() }) else {
+            return;
+        };
+        // 生命周期由外壳保证（和引擎一样）
+        let backend: Option<&'static dyn crate::session::TranslateBackend> =
+            unsafe { translator.as_ref() }.map(|t| {
+                let inner: &dyn crate::session::TranslateBackend = &t.translator;
+                unsafe { &*(inner as *const dyn crate::session::TranslateBackend) }
+            });
+        handle.session.set_translator(backend);
+        handle.backend = None;
+    });
 }
 
 /// 互译用外壳自己的翻译器（函数表，macOS 外壳）；NULL 表示没有翻译器。表里的 user 要比会话活得久，
@@ -847,21 +859,23 @@ pub unsafe extern "C" fn mytype_session_set_translate_backend(
     session: *mut MyTypeSession,
     backend: *const MyTypeTranslateBackend,
 ) {
-    let Some(handle) = (unsafe { session.as_mut() }) else {
-        return;
-    };
-    let boxed: Option<Box<dyn crate::session::TranslateBackend>> = if backend.is_null() {
-        None
-    } else {
-        let raw = unsafe { read_sized(backend, (*backend).size) };
-        Some(Box::new(CBackend(raw)))
-    };
-    // 会话借用盒子里的翻译器：盒子放进 handle 以后地址不变；先换会话的，再放掉旧盒子
-    let borrowed: Option<&'static dyn crate::session::TranslateBackend> = boxed
-        .as_deref()
-        .map(|b| unsafe { &*(b as *const dyn crate::session::TranslateBackend) });
-    handle.session.set_translator(borrowed);
-    handle.backend = boxed;
+    crate::ffi::catch_ffi((), || {
+        let Some(handle) = (unsafe { session.as_mut() }) else {
+            return;
+        };
+        let boxed: Option<Box<dyn crate::session::TranslateBackend>> = if backend.is_null() {
+            None
+        } else {
+            let raw = unsafe { read_sized(backend, (*backend).size) };
+            Some(Box::new(CBackend(raw)))
+        };
+        // 会话借用盒子里的翻译器：盒子放进 handle 以后地址不变；先换会话的，再放掉旧盒子
+        let borrowed: Option<&'static dyn crate::session::TranslateBackend> = boxed
+            .as_deref()
+            .map(|b| unsafe { &*(b as *const dyn crate::session::TranslateBackend) });
+        handle.session.set_translator(borrowed);
+        handle.backend = boxed;
+    });
 }
 
 /// 定时器到了（frame->wake_after_ms 排的）：该发翻译请求的发，按过回车且译好了的放进 frame->commit。
@@ -931,42 +945,50 @@ pub unsafe extern "C" fn mytype_session_open_tool(
 /// 开着的面板，`MYTYPE_TOOL_*`（没开是 NONE）。（1.10 起）
 #[no_mangle]
 pub unsafe extern "C" fn mytype_session_open_panel(session: *const MyTypeSession) -> c_int {
-    let Some(handle) = (unsafe { session.as_ref() }) else {
-        return MYTYPE_TOOL_NONE;
-    };
-    match handle.session.open_panel() {
-        None => MYTYPE_TOOL_NONE,
-        Some(Tool::Menu) => MYTYPE_TOOL_MENU,
-        Some(Tool::Clipboard) => MYTYPE_TOOL_CLIPBOARD,
-        Some(Tool::Phrases) => MYTYPE_TOOL_PHRASES,
-        Some(Tool::Emoji { symbols: true }) => MYTYPE_TOOL_SYMBOLS,
-        Some(Tool::Emoji { symbols: false }) => MYTYPE_TOOL_EMOJI,
-    }
+    crate::ffi::catch_ffi(MYTYPE_TOOL_NONE, || {
+        let Some(handle) = (unsafe { session.as_ref() }) else {
+            return MYTYPE_TOOL_NONE;
+        };
+        match handle.session.open_panel() {
+            None => MYTYPE_TOOL_NONE,
+            Some(Tool::Menu) => MYTYPE_TOOL_MENU,
+            Some(Tool::Clipboard) => MYTYPE_TOOL_CLIPBOARD,
+            Some(Tool::Phrases) => MYTYPE_TOOL_PHRASES,
+            Some(Tool::Emoji { symbols: true }) => MYTYPE_TOOL_SYMBOLS,
+            Some(Tool::Emoji { symbols: false }) => MYTYPE_TOOL_EMOJI,
+        }
+    })
 }
 
 /// 最近用过的 emoji 存在这个文件（一行一个，进程内所有会话共用；读进已有的）。
 /// NULL 或空串：只记在内存里，并清空。（1.10 起）
 #[no_mangle]
 pub unsafe extern "C" fn mytype_recent_emoji_path(path: *const c_char) {
-    crate::recent_emoji::set_path(&unsafe { arg(path) });
+    crate::ffi::catch_ffi((), || {
+        crate::recent_emoji::set_path(&unsafe { arg(path) });
+    });
 }
 
 /// 最近用过的 emoji，最近的在前；用 mytype_candidates_* 读取并释放。（1.10 起）
 #[no_mangle]
 pub extern "C" fn mytype_recent_emoji_list() -> *mut crate::ffi::MyTypeCandidates {
-    let texts: Vec<CString> = crate::recent_emoji::list().iter().map(|t| to_c(t)).collect();
-    let scores = vec![0.0; texts.len()];
-    Box::into_raw(Box::new(crate::ffi::MyTypeCandidates::plain(texts, scores)))
+    crate::ffi::catch_ffi(ptr::null_mut(), || {
+        let texts: Vec<CString> = crate::recent_emoji::list().iter().map(|t| to_c(t)).collect();
+        let scores = vec![0.0; texts.len()];
+        Box::into_raw(Box::new(crate::ffi::MyTypeCandidates::plain(texts, scores)))
+    })
 }
 
 /// 攒着的原文（互译），没有是空串。在同一个会话下一次调用前有效。（1.10 起）
 #[no_mangle]
 pub unsafe extern "C" fn mytype_session_translate_source(session: *mut MyTypeSession) -> *const c_char {
-    let Some(handle) = (unsafe { session.as_mut() }) else {
-        return EMPTY.as_ptr();
-    };
-    let source = handle.session.translate_source().to_owned();
-    handle.text(&source)
+    crate::ffi::catch_ffi(EMPTY.as_ptr(), || {
+        let Some(handle) = (unsafe { session.as_mut() }) else {
+            return EMPTY.as_ptr();
+        };
+        let source = handle.session.translate_source().to_owned();
+        handle.text(&source)
+    })
 }
 
 /// 丢掉互译攒着的原文、取消这个会话的翻译请求（输入框失去焦点）。（1.10 起）
@@ -988,21 +1010,25 @@ pub unsafe extern "C" fn mytype_session_translate_clear(
 /// 全部原始输入（含已选词用掉的部分）。
 #[no_mangle]
 pub unsafe extern "C" fn mytype_session_input(session: *mut MyTypeSession) -> *const c_char {
-    let Some(handle) = (unsafe { session.as_mut() }) else {
-        return ptr::null();
-    };
-    let text = handle.session.input().to_owned();
-    handle.text(&text)
+    crate::ffi::catch_ffi(ptr::null(), || {
+        let Some(handle) = (unsafe { session.as_mut() }) else {
+            return ptr::null();
+        };
+        let text = handle.session.input().to_owned();
+        handle.text(&text)
+    })
 }
 
 /// 还没选词的那部分原始输入。
 #[no_mangle]
 pub unsafe extern "C" fn mytype_session_remaining(session: *mut MyTypeSession) -> *const c_char {
-    let Some(handle) = (unsafe { session.as_mut() }) else {
-        return ptr::null();
-    };
-    let text = handle.session.remaining().to_owned();
-    handle.text(&text)
+    crate::ffi::catch_ffi(ptr::null(), || {
+        let Some(handle) = (unsafe { session.as_mut() }) else {
+            return ptr::null();
+        };
+        let text = handle.session.remaining().to_owned();
+        handle.text(&text)
+    })
 }
 
 /// 已选的词连起来。
@@ -1010,11 +1036,13 @@ pub unsafe extern "C" fn mytype_session_remaining(session: *mut MyTypeSession) -
 pub unsafe extern "C" fn mytype_session_selected_text(
     session: *mut MyTypeSession,
 ) -> *const c_char {
-    let Some(handle) = (unsafe { session.as_mut() }) else {
-        return ptr::null();
-    };
-    let text = handle.session.selected_text();
-    handle.text(&text)
+    crate::ffi::catch_ffi(ptr::null(), || {
+        let Some(handle) = (unsafe { session.as_mut() }) else {
+            return ptr::null();
+        };
+        let text = handle.session.selected_text();
+        handle.text(&text)
+    })
 }
 
 /// 选第 index 个候选（全部候选里的序号，不分页）：句首词进已选栈，其余上屏并记选词，
@@ -1059,7 +1087,9 @@ pub unsafe extern "C" fn mytype_session_view(
 /// 全部候选的个数（不分页）。
 #[no_mangle]
 pub unsafe extern "C" fn mytype_session_candidate_total(session: *mut MyTypeSession) -> usize {
-    unsafe { session.as_mut() }.map_or(0, |handle| handle.c_candidates().len())
+    crate::ffi::catch_ffi(0, || {
+        unsafe { session.as_mut() }.map_or(0, |handle| handle.c_candidates().len())
+    })
 }
 
 /// 第 index 个候选（不分页）写进 out（按 out->size 写）。返回 0 成功，-1 越界或参数为 NULL。
@@ -1070,17 +1100,19 @@ pub unsafe extern "C" fn mytype_session_candidate_info(
     index: usize,
     out: *mut MyTypeCandidateInfo,
 ) -> c_int {
-    let Some(handle) = (unsafe { session.as_mut() }) else {
-        return -1;
-    };
-    if out.is_null() {
-        return -1;
-    }
-    let Some(c) = handle.c_candidates().get(index) else {
-        return -1;
-    };
-    unsafe { write_sized(out, c.info()) };
-    0
+    crate::ffi::catch_ffi(-1, || {
+        let Some(handle) = (unsafe { session.as_mut() }) else {
+            return -1;
+        };
+        if out.is_null() {
+            return -1;
+        }
+        let Some(c) = handle.c_candidates().get(index) else {
+            return -1;
+        };
+        unsafe { write_sized(out, c.info()) };
+        0
+    })
 }
 
 #[cfg(test)]

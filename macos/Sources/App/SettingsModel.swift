@@ -93,8 +93,11 @@ final class SettingsModel: ObservableObject {
     @Published private(set) var release: LexiconPackInstaller.Release?
     @Published private(set) var releaseError: String?
     @Published private(set) var lexiconProgress: String?
+    @Published private(set) var engineReloading = false
+    @Published private(set) var engineReloadFailed = false
     var lexiconBusy: Bool { lexiconProgress != nil }
     private var releaseChecking = false
+    private var lexiconObserver: NSObjectProtocol?
     /// 应用更新：发布页上的新版（没有就是 nil）、检查/下载/安装的状态
     @Published private(set) var updateLatest: UpdateRelease?
     @Published private(set) var updateError: String?
@@ -140,6 +143,22 @@ final class SettingsModel: ObservableObject {
         customStamp = FileStamp(state.customWordsPath)
         words = CustomWords(text: readText(state.customWordsPath)).entries
         learningCounts = LearningData.counts(in: supportDir)
+        lexiconObserver = DistributedNotificationCenter.default().addObserver(
+            forName: AppState.lexiconStateChanged, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let self, let state = note.object as? String else { return }
+            self.engineReloading = (state == "loading")
+            self.engineReloadFailed = (state == "failed")
+        }
+        if wanxiangVersion != nil {
+            checkRelease()
+        }
+    }
+
+    deinit {
+        if let lexiconObserver {
+            DistributedNotificationCenter.default().removeObserver(lexiconObserver)
+        }
     }
 
     private func quietly(_ body: () -> Void) {
@@ -328,7 +347,18 @@ final class SettingsModel: ObservableObject {
                     self.updateProgress = "正在安装，MyType 会退出并自动重开…"
                     self.save()  // 安装器会停掉进程，先把设置写下去
                     do {
-                        try Updater.shared.install(package: package)
+                        let silent = try Updater.shared.install(package: package) { [weak self] detail in
+                            guard let self else { return }
+                            self.updateInstalling = false
+                            self.updateProgress = nil
+                            self.updateError = detail
+                            self.showToast(detail)
+                        }
+                        if !silent {
+                            self.updateInstalling = false
+                            self.updateProgress = nil
+                            self.showToast("已打开系统安装器，请按提示完成升级")
+                        }
                     } catch {
                         self.updateInstalling = false
                         self.updateProgress = nil

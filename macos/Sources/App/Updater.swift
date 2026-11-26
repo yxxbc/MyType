@@ -5,6 +5,7 @@
 // 安装用 /usr/sbin/installer -target CurrentUserHomeDirectory：和 install.sh 一样只装给当前用户，
 // 不要管理员密码。pkg 的 preinstall 会停掉正在跑的 MyType，postinstall 重新登记并切回来。
 
+import AppKit
 import Foundation
 
 struct UpdateError: LocalizedError {
@@ -75,10 +76,10 @@ final class Updater {
         guard MyTypeConfig.load(path: AppState.shared.configPath).checkUpdate else { return }
         let last = UserDefaults.standard.object(forKey: Updater.checkedAtKey) as? Date ?? .distantPast
         guard Date().timeIntervalSince(last) >= Updater.checkInterval else { return }
-        UserDefaults.standard.set(Date(), forKey: Updater.checkedAtKey)
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
             self.checkLatest { result in
                 if case .success(let release) = result {
+                    UserDefaults.standard.set(Date(), forKey: Updater.checkedAtKey)
                     UpdateState.note(release, current: current)
                 }
             }
@@ -152,11 +153,16 @@ final class Updater {
     // MARK: 安装
 
     /// 交给系统的 installer（只装给当前用户）。pkg 的 preinstall 会停掉 MyType，所以这个进程很快就会退出。
-    /// 只在 ~/Library/Input Methods 里装的版本能这样升级；系统目录装的要用户自己下 pkg。
-    func install(package: URL) throws {
+    /// 如果装在系统目录，回退到拉起系统图形安装器向导让用户授权升级。
+    /// 返回 true 表示走了静默安装，false 表示拉起了图形安装器向导。
+    @discardableResult
+    func install(package: URL, onFailure: ((String) -> Void)? = nil) throws -> Bool {
         let prefix = NSHomeDirectory() + "/Library/Input Methods/"
         guard Bundle.main.bundleURL.path.hasPrefix(prefix) else {
-            throw UpdateError("MyType 装在系统目录，不能自动更新。请到发布页下载安装包。")
+            if NSWorkspace.shared.open(package) {
+                return false
+            }
+            throw UpdateError("MyType 装在系统目录且无法打开安装器，请手动运行 \(package.lastPathComponent)。")
         }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/sbin/installer")
@@ -168,7 +174,18 @@ final class Updater {
             process.standardOutput = handle
             process.standardError = handle
         }
+        process.terminationHandler = { proc in
+            guard proc.terminationStatus != 0 else { return }
+            let detail = (try? String(contentsOf: log, encoding: .utf8))?
+                .split(separator: "\n")
+                .suffix(3)
+                .joined(separator: " ") ?? "退出码 \(proc.terminationStatus)"
+            DispatchQueue.main.async {
+                onFailure?("安装器失败：\(detail)")
+            }
+        }
         try process.run()
+        return true
     }
 }
 

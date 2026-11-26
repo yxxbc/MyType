@@ -205,7 +205,7 @@ pub fn beam_search(
         for state in states {
             let parent = arena.len();
             arena.push(state);
-            let prev_text = state.word.map(|(f, i)| spans[f][i].word.text.clone());
+            let prev_text = state.word.map(|(f, i)| spans[f][i].word.text.as_str());
             for (idx, span) in spans[pos].iter().enumerate() {
                 let word = &span.word;
                 if state.typos + word.typos > config.max_typos {
@@ -213,7 +213,7 @@ pub fn beam_search(
                 }
                 let (lm_raw, covered) = if word.known {
                     (
-                        lm.score(prev_text.as_deref(), &word.text),
+                        lm.score(prev_text, &word.text),
                         word.syllable_count,
                     )
                 } else {
@@ -267,7 +267,7 @@ pub fn beam_search(
             node.covered_syllables as f32 / node.total_syllables as f32
         };
         let path = BeamPath {
-            text: text.clone(),
+            text,
             pinyin,
             words,
             score: node.score,
@@ -278,7 +278,7 @@ pub fn beam_search(
             typos: node.typos,
             completion: node.completion,
         };
-        match best_by_text.entry(text) {
+        match best_by_text.entry(path.text.clone()) {
             Entry::Vacant(slot) => {
                 slot.insert(path);
             }
@@ -413,6 +413,7 @@ fn collect_spans(
         pos,
         pos,
         max_syllables,
+        per_span,
         0,
         0,
         &mut keys,
@@ -484,6 +485,7 @@ fn collect_dfs(
     start: usize,
     pos: usize,
     max_syllables: usize,
+    per_span: usize,
     typos: usize,
     swaps: usize,
     keys: &mut Vec<SyllableQuery>,
@@ -514,6 +516,10 @@ fn collect_dfs(
         };
         if !config.rare_ext_chars && keys.len() == 1 {
             entries.retain(|e| !e.is_ext_char());
+        }
+        if !rare && entries.len() > per_span {
+            entries.sort_by(|a, b| b.freq.total_cmp(&a.freq));
+            entries.truncate(per_span);
         }
         let pinyin = if entries.is_empty() {
             String::new()
@@ -547,6 +553,7 @@ fn collect_dfs(
                 start,
                 edge.end,
                 max_syllables,
+                per_span,
                 edge_typos,
                 edge_swaps,
                 keys,
