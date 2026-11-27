@@ -40,8 +40,68 @@ struct Layer {
     f2b: Vec<f32>,
 }
 
+/// 只读权重数据：Unix 下优先 mmap（干净文件页，系统内存紧时可随时回收、不进 swap），
+/// 映射失败或非 Unix 时退回整文件读入。
+enum ModelData {
+    Owned(Vec<u8>),
+    Mapped { ptr: *const u8, len: usize },
+}
+
+impl ModelData {
+    fn open(path: &Path) -> Result<Self> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::io::AsRawFd;
+            let file = std::fs::File::open(path)
+                .with_context(|| format!("读取模型失败: {}", path.display()))?;
+            let len = file.metadata()?.len() as usize;
+            if len > 0 {
+                let ptr = unsafe {
+                    libc::mmap(
+                        std::ptr::null_mut(),
+                        len,
+                        libc::PROT_READ,
+                        libc::MAP_PRIVATE,
+                        file.as_raw_fd(),
+                        0,
+                    )
+                };
+                if ptr != libc::MAP_FAILED {
+                    return Ok(Self::Mapped {
+                        ptr: ptr as *const u8,
+                        len,
+                    });
+                }
+            }
+        }
+        let data =
+            std::fs::read(path).with_context(|| format!("读取模型失败: {}", path.display()))?;
+        Ok(Self::Owned(data))
+    }
+
+    fn as_slice(&self) -> &[u8] {
+        match self {
+            Self::Owned(data) => data,
+            Self::Mapped { ptr, len } => unsafe { std::slice::from_raw_parts(*ptr, *len) },
+        }
+    }
+}
+
+impl Drop for ModelData {
+    fn drop(&mut self) {
+        if let Self::Mapped { ptr, len } = *self {
+            unsafe {
+                libc::munmap(ptr as *mut libc::c_void, len);
+            }
+        }
+    }
+}
+
+unsafe impl Send for ModelData {}
+unsafe impl Sync for ModelData {}
+
 pub struct Model {
-    map: Vec<u8>,
+    map: ModelData,
     c1: Vec<f32>,
     c2: Vec<f32>,
     c3: Vec<f32>,
@@ -100,11 +160,10 @@ impl Model {
             .filter_map(|e| e.ok().map(|e| e.path()))
             .find(|p| p.extension().is_some_and(|e| e == "xnet"))
             .context("模型文件不存在")?;
-        let map =
-            std::fs::read(&xnet).with_context(|| format!("读取模型失败: {}", xnet.display()))?;
+        let map = ModelData::open(&xnet)?;
         let l = Loader {
-            d: &map,
-            r: xnet::parse(&map)?,
+            d: map.as_slice(),
+            r: xnet::parse(map.as_slice())?,
         };
         let mut layers = Vec::with_capacity(LAYERS);
         for i in 0..LAYERS {
@@ -151,7 +210,7 @@ impl Model {
     }
 
     fn mm(&self, x: &QAct, q: &Q, b: Option<&[f32]>) -> Vec<f32> {
-        let w = &self.map[q.off..q.off + q.n * q.k];
+        let w = &self.map.as_slice()[q.off..q.off + q.n * q.k];
         let w = unsafe { std::slice::from_raw_parts(w.as_ptr() as *const i8, w.len()) };
         qgemm(x, w, q.n, q.s, b)
     }

@@ -33,6 +33,9 @@ __pycache__/
 # 打包产物
 dist/
 
+# iOS 工程与构建产物（不入库）
+ios/
+
 # onetake 宣发片工作目录（工具与成片都不入库）
 onetake/
 

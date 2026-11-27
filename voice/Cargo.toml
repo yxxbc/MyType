@@ -1,6 +1,6 @@
 [package]
 name = "mytype-voice"
-version = "0.7.1"
+version = "0.7.2"
 edition = "2021"
 description = "语音输入：热键状态机、音频帧、VAD、ASR 抽象、上屏"
 
@@ -8,6 +8,9 @@ description = "语音输入：热键状态机、音频帧、VAD、ASR 抽象、�
 anyhow = "1"
 # 采集默认不开，避免在无音频开发环境里也要装 ALSA 头文件
 cpal = { version = "0.15", optional = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 coreaudio-sys = { version = "0.2", default-features = false, features = ["audio_unit", "audio_toolbox", "core_audio"], optional = true }

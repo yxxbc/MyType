@@ -532,6 +532,7 @@ pub unsafe extern "C" fn mytype_voice_free(voice: *mut MyTypeVoice) {
             let mut voice = unsafe { Box::from_raw(voice) };
             voice.cancel();
         }
+        wtlocal::clear_cache();
     });
 }
 

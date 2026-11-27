@@ -2,7 +2,7 @@
 //!
 //! 来源：J3n5en/voicekey 的 `crates/wtlocal`，经作者同意后引入并适配（见仓库 README 的引用）。
 //! 适配点：
-//! - 去掉 rayon / memmap2 / zip / tokio，改为标准库并行、整文件读入、系统 `unzip`
+//! - 去掉 rayon / memmap2 / zip / tokio，改为标准库并行、libc::mmap 只读映射、系统 `unzip`
 //! - 引擎接口改为本项目的 [`AsrChannel`]，同步喂 PCM、同步取结果
 
 mod fbank;
@@ -42,6 +42,11 @@ pub fn load(dir: &Path) -> Result<Arc<Model>> {
     let model = Arc::new(Model::load(dir)?);
     *cache = Some((dir.to_path_buf(), model.clone()));
     Ok(model)
+}
+
+/// 释放缓存的离线语音模型（外壳闲置或系统内存压力时由 `mytype_voice_free` 调用）。
+pub fn clear_cache() {
+    *CACHE.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
 
 /// 离线识别渠道：喂 16kHz 单声道 PCM，结束时取文本。

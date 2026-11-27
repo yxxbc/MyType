@@ -170,8 +170,9 @@ pub fn beam_search(
     // 每个位置出发的候选词，只算一次（与到达该位置的路径无关）
     let mut spans: Vec<Vec<Span>> = (0..n).map(|_| Vec::new()).collect();
 
-    let mut arena: Vec<Node> = Vec::new();
+    let mut arena: Vec<Node> = Vec::with_capacity(n.saturating_mul(beam_size));
     let mut buckets: Vec<Vec<Node>> = (0..=n).map(|_| Vec::new()).collect();
+    buckets[0].reserve(beam_size);
     buckets[0].push(Node {
         parent: None,
         word: None,
